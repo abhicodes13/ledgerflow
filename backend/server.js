@@ -1,12 +1,15 @@
 const express = require("express");
 const pool = require("./db");
 const clientService = require("./clientService");
+const invoiceService = require("./invoiceService"); // 1. Import our new invoice service layer
+const analyticsRepository = require("./analyticsRepository");
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
 
+// System Health Check
 app.get("/api/health", async (req, res) => {
   try {
     const dbResult = await pool.query("SELECT NOW()");
@@ -20,24 +23,19 @@ app.get("/api/health", async (req, res) => {
   }
 });
 
+// Client Signup Route
 app.post("/api/clients", async (req, res) => {
-  console.log("📥 Arrived at Controller:", req.body);
   const { name, email } = req.body;
-
   if (!name || !email) {
     return res
       .status(400)
       .json({ error: "Name and email are required fields." });
   }
-
   try {
     const newClient = await clientService.registerClient(name, email);
-    console.log("📤 Sending back to client:", newClient); // Debug logger
-
-    return res.status(201).json({
-      message: "Client created successfully",
-      client: newClient,
-    });
+    return res
+      .status(201)
+      .json({ message: "Client created successfully", client: newClient });
   } catch (error) {
     if (error.code === "DUPLICATE_EMAIL") {
       return res.status(409).json({ error: error.message });
@@ -46,6 +44,65 @@ app.post("/api/clients", async (req, res) => {
   }
 });
 
+// 2. NEW INVOICE CONTROLLER: Processes bills with multi-row item arrays
+app.post("/api/invoices", async (req, res) => {
+  console.log("📥 Incoming Invoice Payload:", req.body);
+  const { client_id, invoice_number, due_date, items } = req.body;
+
+  // Gatekeeper Check: Ensure all mandatory parameters exist
+  if (
+    !client_id ||
+    !invoice_number ||
+    !due_date ||
+    !items ||
+    !Array.isArray(items)
+  ) {
+    return res.status(400).json({
+      error: "Missing required billing fields or items is not an array.",
+    });
+  }
+
+  try {
+    // Forward parameters down to our SQL Transaction machine
+    const completedInvoice = await invoiceService.createFullInvoice(
+      client_id,
+      invoice_number,
+      due_date,
+      items,
+    );
+
+    return res.status(201).json({
+      message:
+        "Invoice and line items created successfully inside a secure transaction!",
+      invoice: completedInvoice,
+    });
+  } catch (error) {
+    console.error(
+      "❌ Invoice controller caught transaction failure:",
+      error.message,
+    );
+    return res.status(500).json({
+      error:
+        "Failed to process invoice due to an internal transactional failure.",
+    });
+  }
+});
+
+app.get("/api/analytics/overview", async (req, res) => {
+  try {
+    const metrics = await analyticsRepository.getOverviewMetrics();
+    return res.json({
+      message: "Analytics calculations computed successfully!",
+      data: metrics,
+    });
+  } catch (error) {
+    console.error("❌ Analytics route failure:", error.message);
+    return res
+      .status(500)
+      .json({ error: "Failed to calculate business metrics." });
+  }
+});
+
 app.listen(PORT, () => {
-  console.log(`🚀 Server active on http://localhost:${PORT}`);
+  console.log(`🚀 LedgerFlow backend listening on http://localhost:${PORT}`);
 });

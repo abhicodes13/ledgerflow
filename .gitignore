@@ -1,0 +1,17 @@
+# Ignore heavy third-party library folders
+node_modules/
+.pnp
+.pnp.js
+
+# Ignore local environment/secret files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Ignore macOS system tracking files
+.DS_Store
+
+# Ignore editor settings files
+.vscode/

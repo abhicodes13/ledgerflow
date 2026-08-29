@@ -1,0 +1,20 @@
+services:
+  database:
+    image: postgres:16-alpine # 1. Switched to Alpine (An ultra-lightweight version)
+    container_name: ledgerflow_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: ledgerflow_db
+    ports:
+      - "5433:5432"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5" # 2. Limit to half of one CPU core max
+          memory: 256M # 3. Cap memory usage at just 256 Megabytes!
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

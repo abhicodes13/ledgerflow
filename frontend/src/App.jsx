@@ -8,7 +8,14 @@ function App() {
   });
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  // 1. INPUT STATES: Track text inputs from the user screen form
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [formMessage, setFormMessage] = useState({ text: "", isError: false });
+  const [submitting, setSubmitting] = useState(false);
+
+  // Core Analytics Fetcher Function
+  const fetchMetrics = () => {
     fetch("/api/analytics/overview")
       .then((res) => res.json())
       .then((payload) => {
@@ -16,7 +23,55 @@ function App() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchMetrics();
   }, []);
+
+  // 2. FORM HANDLER: Submits data to the backend Express server
+  const handleCreateClient = async (e) => {
+    e.preventDefault(); // Stop the browser page from refreshing
+    if (!name || !email) {
+      setFormMessage({
+        text: "Name and email are required fields.",
+        isError: true,
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    setFormMessage({ text: "", isError: false });
+
+    try {
+      const response = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Server rejected creation request.");
+      }
+
+      // SUCCESS: Clear fields and notify operator
+      setFormMessage({
+        text: `Success: ${payload.client.name} registered into database!`,
+        isError: false,
+      });
+      setName("");
+      setEmail("");
+
+      // 3. AUTO-UPDATE: Re-trigger analytics math query immediately to update charts live
+      fetchMetrics();
+    } catch (err) {
+      setFormMessage({ text: err.message, isError: true });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const formatCurrency = (cents) => {
     return new Intl.NumberFormat("en-US", {
@@ -134,6 +189,65 @@ function App() {
               <div className="absolute top-0 right-0 h-[2px] w-0 bg-blue-500 group-hover:w-full transition-all duration-300"></div>
             </div>
           </div>
+
+          {/* NEW SECTION: INTERACTIVE CLIENT CREATION SHEET */}
+          <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                // Register New Client Account
+              </h3>
+              <p className="text-[11px] p-1 text-slate-400">
+                Inject raw buyer profiles straight into your Dockerized
+                PostgreSQL instances.
+              </p>
+            </div>
+
+            <form
+              onSubmit={handleCreateClient}
+              className="flex flex-wrap items-end gap-4 text-xs"
+            >
+              <div className="flex-1 min-w-[200px] space-y-1">
+                <label className="text-[10px]  font-bold text-slate-500 uppercase">
+                  Client Full Name
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Bruce Wayne"
+                  className="w-full border border-slate-900 rounded-xl px-3 py-2 mt-2  bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+                />
+              </div>
+              <div className="flex-1 min-w-[200px] space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="e.g. bruce@waynecorp.com"
+                  className="w-full border border-slate-900 rounded-xl mt-2 px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="bg-zinc-100 hover:bg-zinc-200 text-[#09090b] font-bold px-4 py-2 rounded-xl transition-all shadow-sm font-semibold disabled:opacity-50"
+              >
+                {submitting ? "Saving..." : "Save Profile"}
+              </button>
+            </form>
+
+            {/* STATUS SYSTEM MESSAGE ALERTS */}
+            {formMessage.text && (
+              <div
+                className={`p-3 rounded-xl border text-[11px] font-medium font-mono ${formMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
+              >
+                {formMessage.text}
+              </div>
+            )}
+          </section>
 
           {/* REALTIME SYSTEM NETWORK STATUS PANEL */}
           <div className="rounded-2xl border border-slate-900 bg-slate-950 p-5 font-mono text-[11px] text-slate-400 space-y-2">

@@ -1,8 +1,8 @@
 const express = require("express");
 const pool = require("./db");
+const clientService = require("./clientService");
 
 const app = express();
-
 const PORT = 3000;
 
 app.use(express.json());
@@ -12,42 +12,40 @@ app.get("/api/health", async (req, res) => {
     const dbResult = await pool.query("SELECT NOW()");
     res.json({
       status: "healthy",
-      message: "server is running perfectly",
-      database_time: dbResult.rows[0].now,
+      message: "Server is running perfectly!",
+      database_time: dbResult.rows.now,
     });
   } catch (error) {
-    console.error("db connection failed:", error.message);
-    res.status(500).json({
-      status: "unhealthy",
-      message: "server engine is active but database link failed",
-    });
+    res.status(500).json({ status: "unhealthy", error: error.message });
   }
 });
 
 app.post("/api/clients", async (req, res) => {
-  console.log("📥 Incoming Data Payload:", req.body);
+  console.log("📥 Arrived at Controller:", req.body);
   const { name, email } = req.body;
-  if (!name || !email) {
-    return res.status(400).json({ error: "Name and email required" });
-  }
-  try {
-    const queryText =
-      "INSERT INTO clients (name,email) VALUES ($1,$2) RETURNING *";
-    const values = [name, email];
-    const result = await pool.query(queryText, values);
 
-    res.status(201).json({
+  if (!name || !email) {
+    return res
+      .status(400)
+      .json({ error: "Name and email are required fields." });
+  }
+
+  try {
+    const newClient = await clientService.registerClient(name, email);
+    console.log("📤 Sending back to client:", newClient); // Debug logger
+
+    return res.status(201).json({
       message: "Client created successfully",
-      client: result.rows[0],
+      client: newClient,
     });
   } catch (error) {
-    console.log("failed to save client", error);
-    if (error.code === "23505") {
-      return res.status(409).json({ error: "A client with this email exists" });
+    if (error.code === "DUPLICATE_EMAIL") {
+      return res.status(409).json({ error: error.message });
     }
-    res.status(500).json({ error: "Internal server error while saving data." });
+    return res.status(500).json({ error: "Internal server error occurred." });
   }
 });
+
 app.listen(PORT, () => {
-  console.log(`Server is listening on PORT ${PORT}`);
+  console.log(`🚀 Server active on http://localhost:${PORT}`);
 });

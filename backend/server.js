@@ -121,6 +121,22 @@ app.patch("/api/invoices/:id/settle", async (req, res) => {
   }
 });
 
+// 7. LIST ENDPOINT: Streams the entire joined invoice transaction history array
+app.get("/api/invoices", async (req, res) => {
+  try {
+    const invoices = await invoiceService.getAllInvoices();
+    return res.json({
+      message: "Invoice ledger directories retrieved successfully!",
+      invoices: invoices,
+    });
+  } catch (error) {
+    console.error("❌ Invoice ledger loading failure:", error.message);
+    return res
+      .status(500)
+      .json({ error: "Failed to load transaction ledger records." });
+  }
+});
+
 app.get("/api/clients", async (req, res) => {
   try {
     const result = await pool.query(

@@ -35,6 +35,22 @@ const invoiceRepository = {
     const [updatedInvoice] = result.rows;
     return updatedInvoice;
   },
+  async findAll() {
+    const queryText = `SELECT 
+    i.id,
+    i.invoice_number,
+    i.status,
+    i.due_date,
+    c.name as client_name,
+    COALESCE(SUM(ui.quantity * ui.unit_amount_cents),0)::INT as total_amount_cents
+    FROM invoices i 
+    JOIN clients c ON i.client_id = c.id 
+    LEFT JOIN invoice_items ui ON i.id = ui.invoice_id 
+    GROUP BY i.id, c.name 
+    ORDER BY i.id DESC `;
+    const result = await pool.query(queryText);
+    return result.rows;
+  },
 };
 
 module.exports = invoiceRepository;

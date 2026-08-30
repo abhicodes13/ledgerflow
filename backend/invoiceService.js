@@ -76,6 +76,9 @@ const invoiceService = {
     );
     return updatedInvoice;
   },
+  async getAllInvoices() {
+    return await invoiceRepository.findAll();
+  },
 };
 
 module.exports = invoiceService;

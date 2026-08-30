@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 
 function App() {
   // =========================================================================
-  // 1. DATA STATE MEMORY BASKETS
+  // 1. DATA STATE TRACKING MODULES
   // =========================================================================
   const [metrics, setMetrics] = useState({
     total_outstanding_cents: 0,
@@ -12,7 +12,10 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [clientsList, setClientsList] = useState([]);
 
-  // Client Management States
+  // NEW STORAGE MATRIX: Holds your complete transaction ledger pulled from Postgres
+  const [invoicesList, setInvoicesList] = useState([]);
+
+  // Client Management Input States
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientMessage, setClientMessage] = useState({
@@ -21,7 +24,7 @@ function App() {
   });
   const [clientSubmitting, setClientSubmitting] = useState(false);
 
-  // Invoice Creation States
+  // Invoice Generator Input States
   const [selectedClientId, setSelectedClientId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -35,7 +38,7 @@ function App() {
   const [invoiceSubmitting, setInvoiceSubmitting] = useState(false);
 
   // =========================================================================
-  // 2. BACKEND SYNCHRONIZATION PIPELINES
+  // 2. AUTOMATED BACKEND TELEMETRY PIPELINES
   // =========================================================================
   const fetchMetrics = () => {
     fetch("/api/analytics/overview")
@@ -53,18 +56,27 @@ function App() {
       .then((payload) => {
         if (payload.clients) setClientsList(payload.clients);
       })
-      .catch((err) =>
-        console.error("❌ Client dropdown list pull failed:", err),
-      );
+      .catch((err) => console.error("❌ Dropdown sync drop:", err));
+  };
+
+  // NEW TELEMETRY: Queries backend GET /api/invoices path to refresh the log grid rows
+  const fetchInvoicesList = () => {
+    fetch("/api/invoices")
+      .then((res) => res.json())
+      .then((payload) => {
+        if (payload.invoices) setInvoicesList(payload.invoices);
+      })
+      .catch((err) => console.error("❌ Ledger table sync drop:", err));
   };
 
   useEffect(() => {
     fetchMetrics();
     fetchClientsList();
+    fetchInvoicesList(); // ◄── Pulls database invoice files once canvas mounts
   }, []);
 
   // =========================================================================
-  // 3. ACTION EVENT HANDLERS
+  // 3. ACTION EVENT HANDLERS (THE ECOSYSTEM WIRE CROSSERS)
   // =========================================================================
   const handleCreateClient = async (e) => {
     e.preventDefault();
@@ -85,10 +97,10 @@ function App() {
         body: JSON.stringify({ name: clientName, email: clientEmail }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Server error.");
+      if (!res.ok) throw new Error(data.error || "Server rejected creation.");
 
       setClientMessage({
-        text: `Success: ${data.client.name} registered into database!`,
+        text: `Success: ${data.client.name} saved!`,
         isError: false,
       });
       setClientName("");
@@ -140,10 +152,10 @@ function App() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Transaction failed.");
+      if (!res.ok) throw new Error(data.error || "Transaction rejected.");
 
       setInvoiceMessage({
-        text: `Success: ${invoiceNumber} created safely inside transaction!`,
+        text: `Success: ${invoiceNumber} generated!`,
         isError: false,
       });
       setSelectedClientId("");
@@ -153,6 +165,7 @@ function App() {
       setItemQuantity("1");
       setItemPrice("");
       fetchMetrics();
+      fetchInvoicesList(); // ◄── AUTO-RELOAD: Adds the new bill to your table instantly!
     } catch (err) {
       setInvoiceMessage({ text: err.message, isError: true });
     } finally {
@@ -168,7 +181,9 @@ function App() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Settlement failed.");
+
       fetchMetrics();
+      fetchInvoicesList(); // ◄── AUTO-RELOAD: Refreshes financial records live!
     } catch (err) {
       console.error("❌ Settlement connection drop:", err.message);
     }
@@ -471,40 +486,91 @@ function App() {
               )}
             </section>
           </div>
-
           {/* ========================================================================= */}
-          {/* 8. INTERACTIVE REVENUE SETTLEMENT CONTROL BOARD */}
+          {/* 8. LIVE TRANSACTION LEDGER HISTORY BOARD */}
           {/* ========================================================================= */}
-          <section className="rounded-2xl border border-slate-900 bg-slate-950 p-5 space-y-3">
-            <div className="text-[10px] text-slate-600 font-bold uppercase tracking-wider">
-              // OPEN REVENUE SETTLEMENTS
+          <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                // Real-Time Transaction Ledger
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Live operational data rows compiled directly via inner
+                relational database SQL joints.
+              </p>
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between bg-slate-900/40 border border-slate-900 px-4 py-3 rounded-xl text-xs">
-                <div className="space-y-1">
-                  <div className="flex items-center space-x-2">
-                    <span className="font-bold text-white">Invoice #1</span>
-                    <span className="text-[10px] bg-amber-500/10 text-amber-500 px-1.5 py-0.2 rounded border border-amber-500/20">
-                      PENDING_CASH
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400">
-                    Target Client Reference: Wally West (ID: 12)
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => handleSettleInvoice(1)}
-                  className="bg-white hover:bg-zinc-200 text-[#09090b] font-bold px-3 py-1.5 rounded-lg text-[11px] transition-all shadow-sm"
-                >
-                  Settle Balance
-                </button>
-              </div>
+            <div className="overflow-x-auto border border-slate-900 rounded-xl bg-slate-950">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-900 bg-slate-900/30 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                    <th className="p-4">Invoice #</th>
+                    <th className="p-4">Client Name</th>
+                    <th className="p-4">Due Date</th>
+                    <th className="p-4">Total Amount</th>
+                    <th className="p-4 text-center">Status</th>
+                    <th className="p-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-900/60 font-medium">
+                  {invoicesList.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan="6"
+                        className="p-8 text-center text-slate-600 font-mono"
+                      >
+                        No transactional logs found inside PostgreSQL data
+                        pools.
+                      </td>
+                    </tr>
+                  ) : (
+                    invoicesList.map((inv) => (
+                      <tr
+                        key={inv.id}
+                        className="hover:bg-slate-900/20 transition-all"
+                      >
+                        <td className="p-4 font-mono font-bold text-white">
+                          {inv.invoice_number}
+                        </td>
+                        <td className="p-4 text-slate-300">
+                          {inv.client_name}
+                        </td>
+                        <td className="p-4 text-slate-400">
+                          {new Date(inv.due_date).toLocaleDateString()}
+                        </td>
+                        <td className="p-4 font-mono font-bold text-white">
+                          {formatCurrency(inv.total_amount_cents)}
+                        </td>
+                        <td className="p-4 text-center">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${
+                              inv.status === "paid"
+                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                                : "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                            }`}
+                          >
+                            {inv.status}
+                          </span>
+                        </td>
+                        <td className="p-4 text-right">
+                          {inv.status === "pending" && (
+                            <button
+                              onClick={() => handleSettleInvoice(inv.id)}
+                              className="bg-white hover:bg-zinc-200 text-[#09090b] font-bold px-2.5 py-1 rounded-lg text-[11px] transition-all shadow-sm"
+                            >
+                              Settle
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </section>
 
-          {/* TECHNICAL TELEMETRY PANEL */}
+          {/* ACTIVITY TELEMETRY FOOTER */}
           <div className="rounded-2xl border border-slate-900 bg-slate-950 p-5 font-mono text-[11px] text-slate-400 space-y-2">
             <div className="text-[10px] text-slate-600 font-bold uppercase tracking-wider">
               // PIPELINE ACTIVITY TELEMETRY

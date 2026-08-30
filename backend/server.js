@@ -121,6 +121,17 @@ app.patch("/api/invoices/:id/settle", async (req, res) => {
   }
 });
 
+app.get("/api/clients", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, name FROM clients ORDER BY name ASC;",
+    );
+    return res.json({
+      message: "Client directories retrieved successfully",
+      clients: result.rows,
+    });
+  } catch (error) {}
+});
 app.listen(PORT, () => {
   console.log(`🚀 LedgerFlow backend listening on http://localhost:${PORT}`);
 });

@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from "react";
 
 function App() {
+  // =========================================================================
+  // 1. DATA STATE MEMORY BASKETS
+  // =========================================================================
   const [metrics, setMetrics] = useState({
     total_outstanding_cents: 0,
     total_collected_cents: 0,
     total_clients_count: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [clientsList, setClientsList] = useState([]);
 
+  // Client Management States
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientMessage, setClientMessage] = useState({
@@ -16,6 +21,7 @@ function App() {
   });
   const [clientSubmitting, setClientSubmitting] = useState(false);
 
+  // Invoice Creation States
   const [selectedClientId, setSelectedClientId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -28,29 +34,45 @@ function App() {
   });
   const [invoiceSubmitting, setInvoiceSubmitting] = useState(false);
 
+  // =========================================================================
+  // 2. BACKEND SYNCHRONIZATION PIPELINES
+  // =========================================================================
   const fetchMetrics = () => {
     fetch("/api/analytics/overview")
       .then((res) => res.json())
       .then((payload) => {
-        if (payload.data) {
-          setMetrics(payload.data);
-        }
+        if (payload.data) setMetrics(payload.data);
         setLoading(false);
       })
-      .catch((err) => {
-        console.error("❌ Failed to fetch telemetry metrics:", err);
-        setLoading(false);
-      });
+      .catch(() => setLoading(false));
+  };
+
+  const fetchClientsList = () => {
+    fetch("/api/clients")
+      .then((res) => res.json())
+      .then((payload) => {
+        if (payload.clients) setClientsList(payload.clients);
+      })
+      .catch((err) =>
+        console.error("❌ Client dropdown list pull failed:", err),
+      );
   };
 
   useEffect(() => {
     fetchMetrics();
+    fetchClientsList();
   }, []);
 
+  // =========================================================================
+  // 3. ACTION EVENT HANDLERS
+  // =========================================================================
   const handleCreateClient = async (e) => {
     e.preventDefault();
     if (!clientName || !clientEmail) {
-      setClientMessage({ text: "Name and email are required.", isError: true });
+      setClientMessage({
+        text: "Name and email are required fields.",
+        isError: true,
+      });
       return;
     }
     setClientSubmitting(true);
@@ -63,15 +85,16 @@ function App() {
         body: JSON.stringify({ name: clientName, email: clientEmail }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Registration failed.");
+      if (!res.ok) throw new Error(data.error || "Server error.");
 
       setClientMessage({
-        text: `Success: ${data.client.name} saved!`,
+        text: `Success: ${data.client.name} registered into database!`,
         isError: false,
       });
       setClientName("");
       setClientEmail("");
       fetchMetrics();
+      fetchClientsList();
     } catch (err) {
       setClientMessage({ text: err.message, isError: true });
     } finally {
@@ -120,9 +143,10 @@ function App() {
       if (!res.ok) throw new Error(data.error || "Transaction failed.");
 
       setInvoiceMessage({
-        text: `Success: ${invoiceNumber} generated!`,
+        text: `Success: ${invoiceNumber} created safely inside transaction!`,
         isError: false,
       });
+      setSelectedClientId("");
       setInvoiceNumber("");
       setDueDate("");
       setItemDescription("");
@@ -156,9 +180,12 @@ function App() {
       currency: "USD",
     }).format(cents / 100);
   };
+
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-100 antialiased font-sans">
-      {/* 1. LEFT SIDEBAR NAVIGATION CONTROL */}
+      {/* ========================================================================= */}
+      {/* 4. LEFT SIDEBAR NAVIGATION CONTROL */}
+      {/* ========================================================================= */}
       <aside className="w-64 border-r border-slate-900 bg-slate-950 p-6 flex flex-col justify-between hidden md:flex">
         <div className="space-y-8">
           <div>
@@ -195,8 +222,11 @@ function App() {
         </div>
       </aside>
 
-      {/* 2. DYNAMIC WORKSPACE CONTENT PANEL */}
+      {/* ========================================================================= */}
+      {/* 5. MAIN CONTENT CANVAS LAYER */}
+      {/* ========================================================================= */}
       <div className="flex-1 flex flex-col min-w-0">
+        {/* TOP STATUS CONTROL HEADER */}
         <header className="border-b border-slate-900 bg-slate-950 px-8 py-5 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -209,6 +239,7 @@ function App() {
           </span>
         </header>
 
+        {/* INNER SCROLL PANEL WRAPPER */}
         <main className="flex-1 overflow-y-auto px-8 py-8 max-w-5xl w-full mx-auto space-y-8">
           <div>
             <h1 className="text-2xl font-black text-white tracking-tight">
@@ -220,9 +251,9 @@ function App() {
             </p>
           </div>
 
-          {/* 3. THREE-COLUMN METRICS CARD TILES */}
+          {/* DYNAMIC TELEMETRY STATISTICS CARDS */}
           <div className="grid gap-6 sm:grid-cols-3">
-            {/* CARD 1: ACCOUNTS RECEIVABLE COUNTER */}
+            {/* CARD 1: ACCOUNTS RECEIVABLE */}
             <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
               <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                 <span>Accounts Receivable</span>
@@ -238,7 +269,7 @@ function App() {
               <div className="absolute top-0 right-0 h-[2px] w-0 bg-amber-500 group-hover:w-full transition-all duration-300"></div>
             </div>
 
-            {/* CARD 2: REVENUE COLLECTED COUNTER */}
+            {/* CARD 2: LIQUID CASH FLOW REVENUE */}
             <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
               <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                 <span>Revenue Collected</span>
@@ -254,7 +285,7 @@ function App() {
               <div className="absolute top-0 right-0 h-[2px] w-0 bg-emerald-500 group-hover:w-full transition-all duration-300"></div>
             </div>
 
-            {/* CARD 3: ACTIVE CLIENT REPOSITORIES */}
+            {/* CARD 3: CLIENT REGISTRY DIRECTORIES */}
             <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
               <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                 <span>Active Clients</span>
@@ -269,9 +300,11 @@ function App() {
             </div>
           </div>
 
-          {/* DUAL INTERACTIVE PANEL ROW GRID SECTION */}
+          {/* DUAL WORKSPACE SPLIT BLOCK RENDERER */}
           <div className="grid gap-6 md:grid-cols-2">
-            {/* 1. CLIENT REGISTRATION SHEET */}
+            {/* ========================================================================= */}
+            {/* 6. CLIENT REGISTRATION SHEET */}
+            {/* ========================================================================= */}
             <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4 flex flex-col justify-between">
               <div className="space-y-1">
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">
@@ -325,7 +358,9 @@ function App() {
               )}
             </section>
 
-            {/* 2. MULTI-ROW INVOICE GENERATOR CARD */}
+            {/* ========================================================================= */}
+            {/* 7. UPGRADED INVOICE CREATOR PANEL WITH DYNAMIC DROPDOWN */}
+            {/* ========================================================================= */}
             <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4">
               <div className="space-y-1">
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">
@@ -341,18 +376,25 @@ function App() {
                 className="space-y-3 text-xs"
               >
                 <div className="grid grid-cols-2 gap-3">
+                  {/* DYNAMIC SELECTION CHIP */}
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase">
-                      Target Client ID
+                      Target Buyer
                     </label>
-                    <input
-                      type="number"
+                    <select
                       value={selectedClientId}
                       onChange={(e) => setSelectedClientId(e.target.value)}
-                      placeholder="e.g. 12"
-                      className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
-                    />
+                      className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium"
+                    >
+                      <option value="">-- Choose Client --</option>
+                      {clientsList.map((client) => (
+                        <option key={client.id} value={client.id}>
+                          {client.name} (ID: {client.id})
+                        </option>
+                      ))}
+                    </select>
                   </div>
+
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase">
                       Invoice Number
@@ -430,7 +472,9 @@ function App() {
             </section>
           </div>
 
-          {/* 3. REVENUE SETTLEMENT CONTROL BOARD */}
+          {/* ========================================================================= */}
+          {/* 8. INTERACTIVE REVENUE SETTLEMENT CONTROL BOARD */}
+          {/* ========================================================================= */}
           <section className="rounded-2xl border border-slate-900 bg-slate-950 p-5 space-y-3">
             <div className="text-[10px] text-slate-600 font-bold uppercase tracking-wider">
               // OPEN REVENUE SETTLEMENTS
@@ -460,7 +504,7 @@ function App() {
             </div>
           </section>
 
-          {/* 4. TECHNICAL TELEMETRY FEEDBACK PANEL */}
+          {/* TECHNICAL TELEMETRY PANEL */}
           <div className="rounded-2xl border border-slate-900 bg-slate-950 p-5 font-mono text-[11px] text-slate-400 space-y-2">
             <div className="text-[10px] text-slate-600 font-bold uppercase tracking-wider">
               // PIPELINE ACTIVITY TELEMETRY

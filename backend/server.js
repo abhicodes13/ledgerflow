@@ -82,7 +82,9 @@ app.post("/api/invoices", async (req, res) => {
       error.message,
     );
     return res.status(500).json({
+      success: false,
       error:
+        error.message ||
         "Failed to process invoice due to an internal transactional failure.",
     });
   }

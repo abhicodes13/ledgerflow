@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 
 function App() {
-  // 1. SYSTEM DATA STATES
   const [metrics, setMetrics] = useState({
     total_outstanding_cents: 0,
     total_collected_cents: 0,
@@ -9,7 +8,6 @@ function App() {
   });
   const [loading, setLoading] = useState(true);
 
-  // 2. CLIENT MANAGEMENT STATES
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientMessage, setClientMessage] = useState({
@@ -18,7 +16,6 @@ function App() {
   });
   const [clientSubmitting, setClientSubmitting] = useState(false);
 
-  // 3. NEW FEATURE STATES: INVOICE GENERATOR CONTROL
   const [selectedClientId, setSelectedClientId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -31,22 +28,25 @@ function App() {
   });
   const [invoiceSubmitting, setInvoiceSubmitting] = useState(false);
 
-  // Core Analytics Fetcher
   const fetchMetrics = () => {
     fetch("/api/analytics/overview")
       .then((res) => res.json())
       .then((payload) => {
-        if (payload.data) setMetrics(payload.data);
+        if (payload.data) {
+          setMetrics(payload.data);
+        }
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((err) => {
+        console.error("❌ Failed to fetch telemetry metrics:", err);
+        setLoading(false);
+      });
   };
 
   useEffect(() => {
     fetchMetrics();
   }, []);
 
-  // Handler: Register New Client Account
   const handleCreateClient = async (e) => {
     e.preventDefault();
     if (!clientName || !clientEmail) {
@@ -63,7 +63,7 @@ function App() {
         body: JSON.stringify({ name: clientName, email: clientEmail }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Server error.");
+      if (!res.ok) throw new Error(data.error || "Registration failed.");
 
       setClientMessage({
         text: `Success: ${data.client.name} saved!`,
@@ -79,7 +79,6 @@ function App() {
     }
   };
 
-  // 4. NEW HANDLER: Submits Complete Multi-Table Invoice Transaction
   const handleCreateInvoice = async (e) => {
     e.preventDefault();
     if (
@@ -90,7 +89,7 @@ function App() {
       !itemPrice
     ) {
       setInvoiceMessage({
-        text: "All billing fields are required.",
+        text: "All fields are required to process billing.",
         isError: true,
       });
       return;
@@ -98,7 +97,6 @@ function App() {
     setInvoiceSubmitting(true);
     setInvoiceMessage({ text: "", isError: false });
 
-    // Package your line item fields cleanly into an items data array array list
     const itemsArray = [
       {
         description: itemDescription,
@@ -122,7 +120,7 @@ function App() {
       if (!res.ok) throw new Error(data.error || "Transaction failed.");
 
       setInvoiceMessage({
-        text: `Success: ${invoiceNumber} created safely inside transaction!`,
+        text: `Success: ${invoiceNumber} generated!`,
         isError: false,
       });
       setInvoiceNumber("");
@@ -130,11 +128,25 @@ function App() {
       setItemDescription("");
       setItemQuantity("1");
       setItemPrice("");
-      fetchMetrics(); // Re-trigger live dashboard math instantly
+      fetchMetrics();
     } catch (err) {
       setInvoiceMessage({ text: err.message, isError: true });
     } finally {
       setInvoiceSubmitting(false);
+    }
+  };
+
+  const handleSettleInvoice = async (targetId) => {
+    try {
+      const res = await fetch(`/api/invoices/${targetId}/settle`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Settlement failed.");
+      fetchMetrics();
+    } catch (err) {
+      console.error("❌ Settlement connection drop:", err.message);
     }
   };
 
@@ -144,10 +156,9 @@ function App() {
       currency: "USD",
     }).format(cents / 100);
   };
-
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-100 antialiased font-sans">
-      {/* SIDEBAR NAVIGATION */}
+      {/* 1. LEFT SIDEBAR NAVIGATION CONTROL */}
       <aside className="w-64 border-r border-slate-900 bg-slate-950 p-6 flex flex-col justify-between hidden md:flex">
         <div className="space-y-8">
           <div>
@@ -184,7 +195,7 @@ function App() {
         </div>
       </aside>
 
-      {/* WORKSPACE CONTENT AREA */}
+      {/* 2. DYNAMIC WORKSPACE CONTENT PANEL */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="border-b border-slate-900 bg-slate-950 px-8 py-5 flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -209,8 +220,9 @@ function App() {
             </p>
           </div>
 
-          {/* DYNAMIC METRIC CARDS */}
+          {/* 3. THREE-COLUMN METRICS CARD TILES */}
           <div className="grid gap-6 sm:grid-cols-3">
+            {/* CARD 1: ACCOUNTS RECEIVABLE COUNTER */}
             <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
               <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                 <span>Accounts Receivable</span>
@@ -226,6 +238,7 @@ function App() {
               <div className="absolute top-0 right-0 h-[2px] w-0 bg-amber-500 group-hover:w-full transition-all duration-300"></div>
             </div>
 
+            {/* CARD 2: REVENUE COLLECTED COUNTER */}
             <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
               <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                 <span>Revenue Collected</span>
@@ -241,6 +254,7 @@ function App() {
               <div className="absolute top-0 right-0 h-[2px] w-0 bg-emerald-500 group-hover:w-full transition-all duration-300"></div>
             </div>
 
+            {/* CARD 3: ACTIVE CLIENT REPOSITORIES */}
             <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
               <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                 <span>Active Clients</span>
@@ -254,106 +268,212 @@ function App() {
               <div className="absolute top-0 right-0 h-[2px] w-0 bg-blue-500 group-hover:w-full transition-all duration-300"></div>
             </div>
           </div>
-          {/* NEW INVOICE CREATOR SLAT PANEL */}
-          <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4">
-            <div className="space-y-1">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                // Generate Invoice
-              </h3>
-              <p className="text-[11px] text-slate-500">
-                Launch atomic transactions across multi-row asset logs.
-              </p>
-            </div>
 
-            <form onSubmit={handleCreateInvoice} className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">
-                    Target Client ID
-                  </label>
-                  <input
-                    type="number"
-                    value={selectedClientId}
-                    onChange={(e) => setSelectedClientId(e.target.value)}
-                    placeholder="e.g. 12"
-                    className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">
-                    Invoice Number
-                  </label>
-                  <input
-                    type="text"
-                    value={invoiceNumber}
-                    onChange={(e) => setInvoiceNumber(e.target.value)}
-                    placeholder="e.g. INV-004"
-                    className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
-                  />
-                </div>
-              </div>
-
+          {/* DUAL INTERACTIVE PANEL ROW GRID SECTION */}
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* 1. CLIENT REGISTRATION SHEET */}
+            <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4 flex flex-col justify-between">
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-500 uppercase">
-                  Due Date
-                </label>
-                <input
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium"
-                />
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  // Register Client
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Inject buyer rows directly to your database roledex.
+                </p>
               </div>
 
-              <div className="border-t border-slate-900 pt-3 space-y-2">
-                <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
-                  // Line Item Details
-                </div>
-                <div className="space-y-2">
+              <form onSubmit={handleCreateClient} className="space-y-3 text-xs">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">
+                    Client Name
+                  </label>
                   <input
                     type="text"
-                    value={itemDescription}
-                    onChange={(e) => setItemDescription(e.target.value)}
-                    placeholder="Item Description (e.g. Frontend Consultation)"
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    placeholder="e.g. Wally West"
                     className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
                   />
-                  <div className="grid grid-cols-2 gap-3">
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={clientEmail}
+                    onChange={(e) => setClientEmail(e.target.value)}
+                    placeholder="e.g. wally@west.com"
+                    className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={clientSubmitting}
+                  className="w-full bg-zinc-100 hover:bg-zinc-200 text-[#09090b] font-bold py-2 rounded-xl transition-all shadow-sm font-semibold disabled:opacity-50"
+                >
+                  {clientSubmitting ? "Saving..." : "Save Profile"}
+                </button>
+              </form>
+
+              {clientMessage.text && (
+                <div
+                  className={`p-2.5 rounded-xl border text-[11px] font-mono ${clientMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
+                >
+                  {clientMessage.text}
+                </div>
+              )}
+            </section>
+
+            {/* 2. MULTI-ROW INVOICE GENERATOR CARD */}
+            <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  // Generate Invoice
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Launch atomic transactions across multi-row asset logs.
+                </p>
+              </div>
+
+              <form
+                onSubmit={handleCreateInvoice}
+                className="space-y-3 text-xs"
+              >
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">
+                      Target Client ID
+                    </label>
                     <input
                       type="number"
-                      value={itemQuantity}
-                      onChange={(e) => setItemQuantity(e.target.value)}
-                      placeholder="Qty"
+                      value={selectedClientId}
+                      onChange={(e) => setSelectedClientId(e.target.value)}
+                      placeholder="e.g. 12"
                       className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
                     />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">
+                      Invoice Number
+                    </label>
                     <input
-                      type="number"
-                      step="0.01"
-                      value={itemPrice}
-                      onChange={(e) => setItemPrice(e.target.value)}
-                      placeholder="Price ($)"
+                      type="text"
+                      value={invoiceNumber}
+                      onChange={(e) => setInvoiceNumber(e.target.value)}
+                      placeholder="e.g. INV-004"
                       className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
                     />
                   </div>
                 </div>
-              </div>
 
-              <button
-                type="submit"
-                disabled={invoiceSubmitting}
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl transition-all shadow-md shadow-blue-600/5 font-semibold disabled:opacity-50"
-              >
-                {invoiceSubmitting ? "Processing..." : "Generate Invoice"}
-              </button>
-            </form>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">
+                    Due Date
+                  </label>
+                  <input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium"
+                  />
+                </div>
 
-            {invoiceMessage.text && (
-              <div
-                className={`p-2.5 rounded-xl border text-[11px] font-mono ${invoiceMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
-              >
-                {invoiceMessage.text}
+                <div className="border-t border-slate-900 pt-3 space-y-2">
+                  <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                    // Line Item Details
+                  </div>
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={itemDescription}
+                      onChange={(e) => setItemDescription(e.target.value)}
+                      placeholder="Item Description (e.g. Frontend Consultation)"
+                      className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <input
+                        type="number"
+                        value={itemQuantity}
+                        onChange={(e) => setItemQuantity(e.target.value)}
+                        placeholder="Qty"
+                        className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+                      />
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={itemPrice}
+                        onChange={(e) => setItemPrice(e.target.value)}
+                        placeholder="Price ($)"
+                        className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={invoiceSubmitting}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl transition-all shadow-md shadow-blue-600/5 font-semibold disabled:opacity-50"
+                >
+                  {invoiceSubmitting ? "Processing..." : "Generate Invoice"}
+                </button>
+              </form>
+
+              {invoiceMessage.text && (
+                <div
+                  className={`p-2.5 rounded-xl border text-[11px] font-mono ${invoiceMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
+                >
+                  {invoiceMessage.text}
+                </div>
+              )}
+            </section>
+          </div>
+
+          {/* 3. REVENUE SETTLEMENT CONTROL BOARD */}
+          <section className="rounded-2xl border border-slate-900 bg-slate-950 p-5 space-y-3">
+            <div className="text-[10px] text-slate-600 font-bold uppercase tracking-wider">
+              // OPEN REVENUE SETTLEMENTS
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between bg-slate-900/40 border border-slate-900 px-4 py-3 rounded-xl text-xs">
+                <div className="space-y-1">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-white">Invoice #1</span>
+                    <span className="text-[10px] bg-amber-500/10 text-amber-500 px-1.5 py-0.2 rounded border border-amber-500/20">
+                      PENDING_CASH
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Target Client Reference: Wally West (ID: 12)
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => handleSettleInvoice(1)}
+                  className="bg-white hover:bg-zinc-200 text-[#09090b] font-bold px-3 py-1.5 rounded-lg text-[11px] transition-all shadow-sm"
+                >
+                  Settle Balance
+                </button>
               </div>
-            )}
+            </div>
           </section>
+
+          {/* 4. TECHNICAL TELEMETRY FEEDBACK PANEL */}
+          <div className="rounded-2xl border border-slate-900 bg-slate-950 p-5 font-mono text-[11px] text-slate-400 space-y-2">
+            <div className="text-[10px] text-slate-600 font-bold uppercase tracking-wider">
+              // PIPELINE ACTIVITY TELEMETRY
+            </div>
+            <div className="flex justify-between border-b border-slate-900 pb-1.5">
+              <span className="text-slate-500">PostgreSQL Database:</span>
+              <span className="text-emerald-400">CONNECTED // PORT 5433</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Express Routing API:</span>
+              <span className="text-emerald-400">ONLINE // PORT 3000</span>
+            </div>
+          </div>
         </main>
       </div>
     </div>

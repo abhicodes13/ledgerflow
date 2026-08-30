@@ -103,6 +103,22 @@ app.get("/api/analytics/overview", async (req, res) => {
   }
 });
 
+app.patch("/api/invoices/:id/settle", async (req, res) => {
+  const invoiceId = parseInt(req.params.id, 10);
+  try {
+    const settledInvoice = await invoiceService.settleInvoiceBalance(invoiceId);
+    return res.json({
+      message: "Invoice balance settled and marked as PAID successfully",
+      invoice: settledInvoice,
+    });
+  } catch (error) {
+    console.error("Settlement route failure", error.message);
+    return res.status(500).json({
+      error: error.message || "failed to uupdate financial asset state",
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 LedgerFlow backend listening on http://localhost:${PORT}`);
 });

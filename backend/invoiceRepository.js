@@ -28,6 +28,13 @@ const invoiceRepository = {
     const [newItem] = result.rows;
     return newItem;
   },
+  async updateStatus(invoiceId, status) {
+    const queryText = `UPDATE invoices
+    SET status = $2 WHERE id = $1 RETURNING *`;
+    const result = await pool.query(queryText, [invoiceId, status]);
+    const [updatedInvoice] = result.rows;
+    return updatedInvoice;
+  },
 };
 
 module.exports = invoiceRepository;

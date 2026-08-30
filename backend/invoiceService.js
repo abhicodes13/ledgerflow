@@ -1,4 +1,5 @@
 const pool = require("./db"); // Import our raw pool to manage the transaction loop
+const invoiceRepository = require("./invoiceRepository");
 
 const invoiceService = {
   async createFullInvoice(clientId, invoiceNumber, dueDate, items) {
@@ -64,6 +65,16 @@ const invoiceService = {
       // 7. CRUCIAL: Always hand the network wire back to the pool so other users can use it
       client.release();
     }
+  },
+  async settleInvoiceBalance(invoiceId) {
+    if (!invoiceId) {
+      throw new Error("Missing required invoice identifier target");
+    }
+    const updatedInvoice = await invoiceRepository.updateStatus(
+      invoiceId,
+      "paid",
+    );
+    return updatedInvoice;
   },
 };
 

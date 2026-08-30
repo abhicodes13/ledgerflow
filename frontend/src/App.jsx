@@ -569,7 +569,16 @@ function App() {
                             {inv.status}
                           </span>
                         </td>
-                        <td className="p-4 text-right">
+                        <td className="p-4 text-right flex items-center justify-end gap-2">
+                          {/* ⚡ NEW COMPONENT FEATURE: LIVE DOWNLOAD LINK BLOCKS */}
+                          <a
+                            href={`/api/invoices/${inv.id}/pdf`}
+                            download
+                            className="bg-slate-900 border border-slate-800 text-slate-300 font-semibold px-2.5 py-1 rounded-lg text-[11px] hover:bg-slate-800 hover:text-white transition-all shadow-sm"
+                          >
+                            PDF
+                          </a>
+
                           {inv.status === "pending" && (
                             <button
                               onClick={() => handleSettleInvoice(inv.id)}

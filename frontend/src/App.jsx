@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 
 function App() {
+  // 1. SYSTEM DATA STATES
   const [metrics, setMetrics] = useState({
     total_outstanding_cents: 0,
     total_collected_cents: 0,
@@ -8,13 +9,29 @@ function App() {
   });
   const [loading, setLoading] = useState(true);
 
-  // 1. INPUT STATES: Track text inputs from the user screen form
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [formMessage, setFormMessage] = useState({ text: "", isError: false });
-  const [submitting, setSubmitting] = useState(false);
+  // 2. CLIENT MANAGEMENT STATES
+  const [clientName, setClientName] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+  const [clientMessage, setClientMessage] = useState({
+    text: "",
+    isError: false,
+  });
+  const [clientSubmitting, setClientSubmitting] = useState(false);
 
-  // Core Analytics Fetcher Function
+  // 3. NEW FEATURE STATES: INVOICE GENERATOR CONTROL
+  const [selectedClientId, setSelectedClientId] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [itemDescription, setItemDescription] = useState("");
+  const [itemQuantity, setItemQuantity] = useState("1");
+  const [itemPrice, setItemPrice] = useState("");
+  const [invoiceMessage, setInvoiceMessage] = useState({
+    text: "",
+    isError: false,
+  });
+  const [invoiceSubmitting, setInvoiceSubmitting] = useState(false);
+
+  // Core Analytics Fetcher
   const fetchMetrics = () => {
     fetch("/api/analytics/overview")
       .then((res) => res.json())
@@ -29,47 +46,95 @@ function App() {
     fetchMetrics();
   }, []);
 
-  // 2. FORM HANDLER: Submits data to the backend Express server
+  // Handler: Register New Client Account
   const handleCreateClient = async (e) => {
-    e.preventDefault(); // Stop the browser page from refreshing
-    if (!name || !email) {
-      setFormMessage({
-        text: "Name and email are required fields.",
+    e.preventDefault();
+    if (!clientName || !clientEmail) {
+      setClientMessage({ text: "Name and email are required.", isError: true });
+      return;
+    }
+    setClientSubmitting(true);
+    setClientMessage({ text: "", isError: false });
+
+    try {
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: clientName, email: clientEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Server error.");
+
+      setClientMessage({
+        text: `Success: ${data.client.name} saved!`,
+        isError: false,
+      });
+      setClientName("");
+      setClientEmail("");
+      fetchMetrics();
+    } catch (err) {
+      setClientMessage({ text: err.message, isError: true });
+    } finally {
+      setClientSubmitting(false);
+    }
+  };
+
+  // 4. NEW HANDLER: Submits Complete Multi-Table Invoice Transaction
+  const handleCreateInvoice = async (e) => {
+    e.preventDefault();
+    if (
+      !selectedClientId ||
+      !invoiceNumber ||
+      !dueDate ||
+      !itemDescription ||
+      !itemPrice
+    ) {
+      setInvoiceMessage({
+        text: "All billing fields are required.",
         isError: true,
       });
       return;
     }
+    setInvoiceSubmitting(true);
+    setInvoiceMessage({ text: "", isError: false });
 
-    setSubmitting(true);
-    setFormMessage({ text: "", isError: false });
+    // Package your line item fields cleanly into an items data array array list
+    const itemsArray = [
+      {
+        description: itemDescription,
+        quantity: parseInt(itemQuantity, 10) || 1,
+        price: parseFloat(itemPrice) || 0,
+      },
+    ];
 
     try {
-      const response = await fetch("/api/clients", {
+      const res = await fetch("/api/invoices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email }),
+        body: JSON.stringify({
+          client_id: parseInt(selectedClientId, 10),
+          invoice_number: invoiceNumber,
+          due_date: dueDate,
+          items: itemsArray,
+        }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Transaction failed.");
 
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || "Server rejected creation request.");
-      }
-
-      // SUCCESS: Clear fields and notify operator
-      setFormMessage({
-        text: `Success: ${payload.client.name} registered into database!`,
+      setInvoiceMessage({
+        text: `Success: ${invoiceNumber} created safely inside transaction!`,
         isError: false,
       });
-      setName("");
-      setEmail("");
-
-      // 3. AUTO-UPDATE: Re-trigger analytics math query immediately to update charts live
-      fetchMetrics();
+      setInvoiceNumber("");
+      setDueDate("");
+      setItemDescription("");
+      setItemQuantity("1");
+      setItemPrice("");
+      fetchMetrics(); // Re-trigger live dashboard math instantly
     } catch (err) {
-      setFormMessage({ text: err.message, isError: true });
+      setInvoiceMessage({ text: err.message, isError: true });
     } finally {
-      setSubmitting(false);
+      setInvoiceSubmitting(false);
     }
   };
 
@@ -114,7 +179,7 @@ function App() {
             </a>
           </nav>
         </div>
-        <div className="border-t border-slate-900 pt-4 flex items-center space-x-3 text-xs text-slate-400">
+        <div className="border-t border-slate-900 pt-4 text-xs text-slate-400">
           <span>👨‍💻 Abhi (Admin)</span>
         </div>
       </aside>
@@ -189,80 +254,106 @@ function App() {
               <div className="absolute top-0 right-0 h-[2px] w-0 bg-blue-500 group-hover:w-full transition-all duration-300"></div>
             </div>
           </div>
-
-          {/* NEW SECTION: INTERACTIVE CLIENT CREATION SHEET */}
+          {/* NEW INVOICE CREATOR SLAT PANEL */}
           <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4">
-            <div>
+            <div className="space-y-1">
               <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                // Register New Client Account
+                // Generate Invoice
               </h3>
-              <p className="text-[11px] p-1 text-slate-400">
-                Inject raw buyer profiles straight into your Dockerized
-                PostgreSQL instances.
+              <p className="text-[11px] text-slate-500">
+                Launch atomic transactions across multi-row asset logs.
               </p>
             </div>
 
-            <form
-              onSubmit={handleCreateClient}
-              className="flex flex-wrap items-end gap-4 text-xs"
-            >
-              <div className="flex-1 min-w-[200px] space-y-1">
-                <label className="text-[10px]  font-bold text-slate-500 uppercase">
-                  Client Full Name
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Bruce Wayne"
-                  className="w-full border border-slate-900 rounded-xl px-3 py-2 mt-2  bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
-                />
+            <form onSubmit={handleCreateInvoice} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">
+                    Target Client ID
+                  </label>
+                  <input
+                    type="number"
+                    value={selectedClientId}
+                    onChange={(e) => setSelectedClientId(e.target.value)}
+                    placeholder="e.g. 12"
+                    className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">
+                    Invoice Number
+                  </label>
+                  <input
+                    type="text"
+                    value={invoiceNumber}
+                    onChange={(e) => setInvoiceNumber(e.target.value)}
+                    placeholder="e.g. INV-004"
+                    className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+                  />
+                </div>
               </div>
-              <div className="flex-1 min-w-[200px] space-y-1">
+
+              <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-500 uppercase">
-                  Email Address
+                  Due Date
                 </label>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="e.g. bruce@waynecorp.com"
-                  className="w-full border border-slate-900 rounded-xl mt-2 px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium"
                 />
               </div>
+
+              <div className="border-t border-slate-900 pt-3 space-y-2">
+                <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                  // Line Item Details
+                </div>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={itemDescription}
+                    onChange={(e) => setItemDescription(e.target.value)}
+                    placeholder="Item Description (e.g. Frontend Consultation)"
+                    className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="number"
+                      value={itemQuantity}
+                      onChange={(e) => setItemQuantity(e.target.value)}
+                      placeholder="Qty"
+                      className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+                    />
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={itemPrice}
+                      onChange={(e) => setItemPrice(e.target.value)}
+                      placeholder="Price ($)"
+                      className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <button
                 type="submit"
-                disabled={submitting}
-                className="bg-zinc-100 hover:bg-zinc-200 text-[#09090b] font-bold px-4 py-2 rounded-xl transition-all shadow-sm font-semibold disabled:opacity-50"
+                disabled={invoiceSubmitting}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl transition-all shadow-md shadow-blue-600/5 font-semibold disabled:opacity-50"
               >
-                {submitting ? "Saving..." : "Save Profile"}
+                {invoiceSubmitting ? "Processing..." : "Generate Invoice"}
               </button>
             </form>
 
-            {/* STATUS SYSTEM MESSAGE ALERTS */}
-            {formMessage.text && (
+            {invoiceMessage.text && (
               <div
-                className={`p-3 rounded-xl border text-[11px] font-medium font-mono ${formMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
+                className={`p-2.5 rounded-xl border text-[11px] font-mono ${invoiceMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
               >
-                {formMessage.text}
+                {invoiceMessage.text}
               </div>
             )}
           </section>
-
-          {/* REALTIME SYSTEM NETWORK STATUS PANEL */}
-          <div className="rounded-2xl border border-slate-900 bg-slate-950 p-5 font-mono text-[11px] text-slate-400 space-y-2">
-            <div className="text-[10px] text-slate-600 font-bold uppercase tracking-wider">
-              // PIPELINE ACTIVITY TELEMETRY
-            </div>
-            <div className="flex justify-between border-b border-slate-900 pb-1.5">
-              <span className="text-slate-500">PostgreSQL Database:</span>
-              <span className="text-emerald-400">CONNECTED // PORT 5433</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Express Routing API:</span>
-              <span className="text-emerald-400">ONLINE // PORT 3000</span>
-            </div>
-          </div>
         </main>
       </div>
     </div>

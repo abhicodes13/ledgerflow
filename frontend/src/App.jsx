@@ -14,6 +14,7 @@ function App() {
 
   // NEW STORAGE MATRIX: Holds your complete transaction ledger pulled from Postgres
   const [invoicesList, setInvoicesList] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Client Management Input States
   const [clientName, setClientName] = useState("");
@@ -195,6 +196,13 @@ function App() {
       currency: "USD",
     }).format(cents / 100);
   };
+
+  const filteredInvoices = invoicesList.filter((inv) => {
+    return (
+      inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      inv.client_name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  });
 
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-100 antialiased font-sans">
@@ -499,6 +507,15 @@ function App() {
                 relational database SQL joints.
               </p>
             </div>
+            <div className="w-full sm:w-64">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="🔍 Search Invoice # or Client Name..."
+                className="w-full border border-slate-900 rounded-xl px-3 py-1.5 bg-slate-900 text-white text-xs focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-600"
+              />
+            </div>
 
             <div className="overflow-x-auto border border-slate-900 rounded-xl bg-slate-950">
               <table className="w-full text-left border-collapse text-xs">
@@ -524,7 +541,7 @@ function App() {
                       </td>
                     </tr>
                   ) : (
-                    invoicesList.map((inv) => (
+                    filteredInvoices.map((inv) => (
                       <tr
                         key={inv.id}
                         className="hover:bg-slate-900/20 transition-all"

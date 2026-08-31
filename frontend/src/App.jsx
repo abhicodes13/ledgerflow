@@ -1,441 +1,21 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
+import { useLedgerFlowData } from "./hooks/useLedgerFlowData";
+import { MetricCards } from "./components/MetricCards";
+import { CashflowChart } from "./components/CashflowChart";
+import { ClientForm } from "./components/ClientForm";
+import { InvoiceForm } from "./components/InvoiceForm";
 
 function App() {
-  // =========================================================================
-  // 1. SECURITY & SESSION MEMORY STATES
-  // =========================================================================
-  const [token, setToken] = useState(localStorage.getItem("lf_token") || "");
-  const [currentUser, setCurrentUser] = useState(
-    JSON.parse(localStorage.getItem("lf_user")) || null,
-  );
-  const [isRegistering, setIsRegistering] = useState(false);
+  // ⚡ LINK CUSTOM DATA STREAM HOOK ENGINE
+  const data = useLedgerFlowData();
 
-  // Auth Form Input States
-  const [authUsername, setAuthUsername] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
-  const [authMessage, setAuthMessage] = useState({ text: "", isError: false });
-  const [authSubmitting, setAuthSubmitting] = useState(false);
-
-  // =========================================================================
-  // 2. SYSTEM DATA TELEMETRY STATES
-  // =========================================================================
-  const [metrics, setMetrics] = useState({
-    total_outstanding_cents: 0,
-    total_collected_cents: 0,
-    total_clients_count: 0,
-  });
-  const [loading, setLoading] = useState(true);
-  const [clientsList, setClientsList] = useState([]);
-  const [invoicesList, setInvoicesList] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
-
-  // Core Data Forms Input States
-  const [clientName, setClientName] = useState("");
-  const [clientEmail, setClientEmail] = useState("");
-  const [clientMessage, setClientMessage] = useState({
-    text: "",
-    isError: false,
-  });
-  const [clientSubmitting, setClientSubmitting] = useState(false);
-
-  const [selectedClientId, setSelectedClientId] = useState("");
-  const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [itemPrice, setItemPrice] = useState("");
-  const [invoiceMessage, setInvoiceMessage] = useState({
-    text: "",
-    isError: false,
-  });
-  const [invoiceSubmitting, setInvoiceSubmitting] = useState(false);
-  const [items, setItems] = useState([
-    { description: "", quantity: 1, price: "" },
-  ]);
-
-  const handleAddItemRow = () => {
-    setItems([...items, { description: "", quantity: 1, price: "" }]);
-  };
-  const handleRemoveItemRow = (indexToRemove) => {
-    // Keep at least one item line row visible on the form screen canvas
-    if (items.length === 1) return;
-    setItems(items.filter((_, idx) => idx !== indexToRemove));
-  };
-
-  // ⚡ ACTION C: Tracks keystrokes to update specific fields in a specific item row
-  const handleItemFieldChange = (index, field, value) => {
-    const updatedItems = items.map((item, idx) => {
-      if (idx === index) {
-        return { ...item, [field]: value };
-      }
-      return item;
-    });
-    setItems(updatedItems);
-  };
-
-  // =========================================================================
-  // 3. BACKGROUND SECURED FETCHERS (STAGE 3 HEADERS LOADED ⚡)
-  // =========================================================================
-  const fetchMetrics = () => {
-    if (!token) return;
-    fetch("/api/analytics/overview", {
-      headers: { Authorization: `Bearer ${token}` }, // ◄── Pass security gate!
-    })
-      .then((res) => res.json())
-      .then((payload) => {
-        if (payload.data) setMetrics(payload.data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
-
-  const fetchClientsList = () => {
-    if (!token) return;
-    fetch("/api/clients", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
-      .then((payload) => {
-        if (payload.clients) setClientsList(payload.clients);
-      })
-      .catch((err) => console.error("❌ Dropdown lookup breakdown:", err));
-  };
-
-  const fetchInvoicesList = () => {
-    if (!token) return;
-    fetch("/api/invoices", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
-      .then((payload) => {
-        if (payload.invoices) setInvoicesList(payload.invoices);
-      })
-      .catch((err) => console.error("❌ Ledger grid lookup breakdown:", err));
-  };
-
-  useEffect(() => {
-    if (token) {
-      fetchMetrics();
-      fetchClientsList();
-      fetchInvoicesList();
-    }
-  }, [token]);
-
-  // =========================================================================
-  // 4. SECURITY & AUTH ACTION EVENT HANDLERS
-  // =========================================================================
-  const handleAuthSubmit = async (e) => {
-    e.preventDefault();
-    if (!authUsername || !authPassword) {
-      setAuthMessage({
-        text: "Credentials fields cannot be left blank.",
-        isError: true,
-      });
-      return;
-    }
-    setAuthSubmitting(true);
-    setAuthMessage({ text: "", isError: false });
-
-    const endpointPath = isRegistering
-      ? "/api/auth/register"
-      : "/api/auth/login";
-
-    try {
-      const res = await fetch(endpointPath, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: authUsername,
-          password: authPassword,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok)
-        throw new Error(
-          data.error || "Security authentication gate rejected request.",
-        );
-
-      if (isRegistering) {
-        setAuthMessage({
-          text: "Account profile created successfully! Switching to login view...",
-          isError: false,
-        });
-        setAuthUsername("");
-        setAuthPassword("");
-        setIsRegistering(false);
-      } else {
-        localStorage.setItem("lf_token", data.token);
-        localStorage.setItem("lf_user", JSON.stringify(data.user));
-        setToken(data.token);
-        setCurrentUser(data.user);
-        setAuthUsername("");
-        setAuthPassword("");
-      }
-    } catch (err) {
-      setAuthMessage({ text: err.message, isError: true });
-    } finally {
-      setAuthSubmitting(false);
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("lf_token");
-    localStorage.removeItem("lf_user");
-    setToken("");
-    setCurrentUser(null);
-    setMetrics({
-      total_outstanding_cents: 0,
-      total_collected_cents: 0,
-      total_clients_count: 0,
-    });
-    setClientsList([]);
-    setInvoicesList([]);
-    setSearchTerm("");
-  };
-
-  // =========================================================================
-  // 5. CORE WORKSPACE DATA FORM HANDLERS (STAGE 3 AUTH-HEADERS LOADED ⚡)
-  // =========================================================================
-  const handleCreateClient = async (e) => {
-    e.preventDefault();
-    if (!clientName || !clientEmail) {
-      setClientMessage({
-        text: "Name and email are required fields.",
-        isError: true,
-      });
-      return;
-    }
-    setClientSubmitting(true);
-    setClientMessage({ text: "", isError: false });
-
-    try {
-      const res = await fetch("/api/clients", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`, // ◄── Pass Stage 3 verification fences!
-        },
-        body: JSON.stringify({ name: clientName, email: clientEmail }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Server rejected insertion.");
-
-      setClientMessage({
-        text: `Success: ${clientName} saved!`,
-        isError: false,
-      });
-      setClientName("");
-      setClientEmail("");
-      fetchMetrics();
-      fetchClientsList();
-    } catch (err) {
-      setClientMessage({ text: err.message, isError: true });
-    } finally {
-      setClientSubmitting(false);
-    }
-  };
-
-  /*const handleCreateInvoice = async (e) => {
-    e.preventDefault();
-
-    // Base Validator Check: Ensure primary invoice container meta-data keys exist
-    if (!selectedClientId || !invoiceNumber || !dueDate) {
-      setInvoiceMessage({
-        text: "All core configuration layout fields are required.",
-        isError: true,
-      });
-      return;
-    }
-
-    // Deep Array Validator Check: Ensure line rows aren't empty
-    for (const item of items) {
-      if (
-        !item.description ||
-        !item.price ||
-        parseFloat(item.price) <= 0 ||
-        parseInt(item.quantity, 10) <= 0
-      ) {
-        setInvoiceMessage({
-          text: "Every item line must possess a valid description, quantity, and positive price.",
-          isError: true,
-        });
-        return;
-      }
-    }
-
-    setInvoiceSubmitting(true);
-    setInvoiceMessage({ text: "", isError: false });
-
-    // Format fields cleanly to match the database types before flight transport operations
-    const formattedItems = items.map((item) => ({
-      description: item.description.trim(),
-      quantity: parseInt(item.quantity, 10) || 1,
-      price: parseFloat(item.price) || 0, // Backend will multiply this by 100 into integer cents
-    }));
-
-    try {
-      const res = await fetch("/api/invoices", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          client_id: parseInt(selectedClientId, 10),
-          invoice_number: invoiceNumber.trim(),
-          due_date: dueDate,
-          items: formattedItems, // ⚡ Passes your dynamic multi-item array payload!
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok)
-        throw new Error(
-          data.error || "Transaction rejected by database safe pools.",
-        );
-
-      // SUCCESS PATH: Flush inputs and reset the form state container back to a single clean row
-      setInvoiceMessage({
-        text: `Success: Invoice ${invoiceNumber} created with ${items.length} lines!`,
-        isError: false,
-      });
-      setSelectedClientId("");
-      setInvoiceNumber("");
-      setDueDate("");
-      setItems([{ description: "", quantity: 1, price: "" }]); // ⚡ Reset to a clean default state
-
-      fetchMetrics();
-      fetchInvoicesList();
-    } catch (err) {
-      setInvoiceMessage({ text: err.message, isError: true });
-    } finally {
-      setInvoiceSubmitting(false);
-    }
-  };*/
-  const handleCreateInvoice = async (e) => {
-    e.preventDefault();
-
-    if (!selectedClientId || !invoiceNumber || !dueDate) {
-      setInvoiceMessage({
-        text: "All core configuration fields are required.",
-        isError: true,
-      });
-      return;
-    }
-
-    setInvoiceSubmitting(true);
-    setInvoiceMessage({ text: "", isError: false });
-
-    try {
-      // 🧠 STRATEGY: Scrape the actual DOM nodes straight from the browser canvas window
-      const formElement = e.target;
-      const descriptions = Array.from(
-        formElement.querySelectorAll('input[placeholder*="Item Description"]'),
-      ).map((el) => el.value.trim());
-      const quantities = Array.from(
-        formElement.querySelectorAll('input[placeholder="Qty"]'),
-      ).map((el) => parseInt(el.value, 10) || 1);
-      const prices = Array.from(
-        formElement.querySelectorAll('input[placeholder*="Price"]'),
-      ).map((el) => parseFloat(el.value) || 0);
-
-      // Assemble your items list collection array from the scraped browser node positions
-      const formattedItems = descriptions.map((desc, idx) => ({
-        description: desc,
-        quantity: quantities[idx],
-        price: prices[idx],
-      }));
-
-      // Fallback Validator Check: Stop empty array lists from flying over the port line
-      if (
-        formattedItems.length === 0 ||
-        formattedItems.some((item) => !item.description || item.price <= 0)
-      ) {
-        throw new Error(
-          "Every item line must possess a valid description, quantity, and positive price.",
-        );
-      }
-
-      const res = await fetch("/api/invoices", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          client_id: parseInt(selectedClientId, 10),
-          invoice_number: invoiceNumber.trim(),
-          due_date: dueDate,
-          items: formattedItems,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok)
-        throw new Error(
-          data.error || "Transaction rejected by database safe pools.",
-        );
-
-      // SUCCESS CLEARANCE LOOP
-      setInvoiceMessage({
-        text: `Success: Invoice ${invoiceNumber} created with ${formattedItems.length} lines!`,
-        isError: false,
-      });
-      setSelectedClientId("");
-      setInvoiceNumber("");
-      setDueDate("");
-      setItems([{ description: "", quantity: 1, price: "" }]); // Reset tracking arrays back to default
-
-      fetchMetrics();
-      fetchInvoicesList();
-    } catch (err) {
-      setInvoiceMessage({ text: err.message, isError: true });
-    } finally {
-      setInvoiceSubmitting(false);
-    }
-  };
-
-  const handleSettleInvoice = async (targetId) => {
-    try {
-      const res = await fetch(`/api/invoices/${targetId}/settle`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`, // ◄── Pass Stage 3 verification fences!
-        },
-      });
-      const data = await res.json();
-      if (!res.ok)
-        throw new Error(
-          data.error || "Challenge response verification failed.",
-        );
-
-      fetchMetrics();
-      fetchInvoicesList();
-    } catch (err) {
-      console.error("❌ Settlement connection drop:", err.message);
-    }
-  };
-
-  const formatCurrency = (cents) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(cents / 100);
-  };
-
-  const filteredInvoices = invoicesList.filter((inv) => {
-    return (
-      inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      inv.client_name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  });
-
+  // Asynchronous Blob PDF Secure Downloader Implementation
   const handleDownloadPdf = async (invoiceId, invoiceNumber) => {
     try {
       const res = await fetch(`/api/invoices/${invoiceId}/pdf`, {
-        headers: {
-          Authorization: `Bearer ${token}`, // ◄── Passes security verification!
-        },
+        headers: { Authorization: `Bearer ${data.token}` },
       });
       if (!res.ok) throw new Error("Failed to download PDF stream.");
-
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -450,10 +30,143 @@ function App() {
     }
   };
 
-  // =========================================================================
-  // 6. DYNAMIC UI PRESENTATION RENDERING LAYER
-  // =========================================================================
-  if (!token) {
+  // Auth Submit Bridge Interceptor
+  const handleAuthSubmitInternal = async (e) => {
+    e.preventDefault();
+    if (!data.authUsername || !data.authPassword) {
+      data.setAuthMessage({
+        text: "Credentials fields cannot be left blank.",
+        isError: true,
+      });
+      return;
+    }
+    data.setAuthMessage({ text: "", isError: false });
+    const endpointPath = data.isRegistering
+      ? "/api/auth/register"
+      : "/api/auth/login";
+
+    try {
+      const res = await fetch(endpointPath, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: data.authUsername,
+          password: data.authPassword,
+        }),
+      });
+      const resData = await res.json();
+      if (!res.ok)
+        throw new Error(
+          resData.error || "Authentication gate rejected request.",
+        );
+
+      if (data.isRegistering) {
+        data.setAuthMessage({
+          text: "Account profile created successfully! Switching to login view...",
+          isError: false,
+        });
+        data.setAuthUsername("");
+        data.setAuthPassword("");
+        data.setIsRegistering(false);
+      } else {
+        localStorage.setItem("lf_token", resData.token);
+        localStorage.setItem("lf_user", JSON.stringify(resData.user));
+        data.setToken(resData.token);
+        data.setCurrentUser(resData.user);
+        data.setAuthUsername("");
+        data.setAuthPassword("");
+      }
+    } catch (err) {
+      data.setAuthMessage({ text: err.message, isError: true });
+    }
+  };
+
+  // Form Submission Interceptor Bridges
+  const handleClientSubmitInternal = async (e) => {
+    e.preventDefault();
+    if (!data.clientName || !data.clientEmail) return;
+    try {
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${data.token}`,
+        },
+        body: JSON.stringify({
+          name: data.clientName,
+          email: data.clientEmail,
+        }),
+      });
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error);
+      data.setClientMessage({
+        text: `Success: ${data.clientName} saved!`,
+        isError: false,
+      });
+      data.setClientName("");
+      data.setClientEmail("");
+      data.fetchMetrics();
+      data.fetchClientsList();
+    } catch (err) {
+      data.setClientMessage({ text: err.message, isError: true });
+    }
+  };
+
+  const handleInvoiceSubmitInternal = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/invoices", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${data.token}`,
+        },
+        body: JSON.stringify({
+          client_id: parseInt(data.selectedClientId, 10),
+          invoice_number: data.invoiceNumber,
+          due_date: data.dueDate,
+          items: data.items.map((i) => ({
+            description: i.description,
+            quantity: parseInt(i.quantity, 10),
+            price: parseFloat(i.price),
+          })),
+        }),
+      });
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error);
+      data.setInvoiceMessage({
+        text: `Success: Invoice Generated!`,
+        isError: false,
+      });
+      data.setSelectedClientId("");
+      data.setInvoiceNumber("");
+      data.setDueDate("");
+      data.setItems([{ description: "", quantity: 1, price: "" }]);
+      data.fetchMetrics();
+      data.fetchInvoicesList();
+    } catch (err) {
+      data.setInvoiceMessage({ text: err.message, isError: true });
+    }
+  };
+
+  const handleSettleInternal = async (id) => {
+    await fetch(`/api/invoices/${id}/settle`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${data.token}` },
+    });
+    data.fetchMetrics();
+    data.fetchInvoicesList();
+  };
+
+  const filteredInvoices = data.invoicesList.filter(
+    (inv) =>
+      inv.invoice_number
+        .toLowerCase()
+        .includes(data.searchTerm.toLowerCase()) ||
+      inv.client_name.toLowerCase().includes(data.searchTerm.toLowerCase()),
+  );
+  // Unauthenticated Gatekeeper Screen Overlay View
+  if (!data.token) {
     return (
       <div className="flex min-h-screen bg-slate-950 text-slate-100 antialiased font-sans items-center justify-center p-6">
         <div className="w-full max-w-sm rounded-2xl border border-slate-900 bg-slate-950 p-8 space-y-6 shadow-xl shadow-black/40">
@@ -462,74 +175,72 @@ function App() {
               Ledger<span className="text-blue-500">Flow</span>
             </span>
             <p className="text-[10px] text-slate-600 font-mono uppercase tracking-widest">
-              SaaS_Gateway_V4
+              SaaS_Modular_V4
             </p>
           </div>
           <div className="space-y-1 text-center">
             <h2 className="text-base font-bold text-white tracking-tight">
-              {isRegistering
+              {data.isRegistering
                 ? "Create Administrative Account"
                 : "Authenticate Session Login"}
             </h2>
             <p className="text-xs text-slate-500">
-              {isRegistering
+              {data.isRegistering
                 ? "Provision private multi-tenant asset rows."
                 : "Access sandboxed cashflow summaries."}
             </p>
           </div>
-          <form onSubmit={handleAuthSubmit} className="space-y-4 text-xs">
+          <form
+            onSubmit={handleAuthSubmitInternal}
+            className="space-y-4 text-xs"
+          >
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              <label className="text-[10px] font-bold text-slate-500 uppercase">
                 Account Username
               </label>
               <input
                 type="text"
-                value={authUsername}
-                onChange={(e) => setAuthUsername(e.target.value)}
+                value={data.authUsername}
+                onChange={(e) => data.setAuthUsername(e.target.value)}
                 placeholder="e.g. AbhiAdmin"
-                className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+                className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              <label className="text-[10px] font-bold text-slate-500 uppercase">
                 Secure Password
               </label>
               <input
                 type="password"
-                value={authPassword}
-                onChange={(e) => setAuthPassword(e.target.value)}
+                value={data.authPassword}
+                onChange={(e) => data.setAuthPassword(e.target.value)}
                 placeholder="••••••••••••"
-                className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+                className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none"
               />
             </div>
             <button
               type="submit"
-              disabled={authSubmitting}
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl transition-all shadow-md shadow-blue-600/10 font-semibold disabled:opacity-50"
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl transition-all shadow-md"
             >
-              {authSubmitting
-                ? "Authenticating Encryption..."
-                : isRegistering
-                  ? "Sign Up Profile"
-                  : "Sign In Session"}
+              {data.isRegistering ? "Sign Up Profile" : "Sign In Session"}
             </button>
           </form>
-          {authMessage.text && (
+          {data.authMessage.text && (
             <div
-              className={`p-2.5 rounded-xl border text-[11px] font-mono text-center ${authMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
+              className={`p-2.5 rounded-xl border text-[11px] font-mono text-center ${data.authMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
             >
-              {authMessage.text}
+              {data.authMessage.text}
             </div>
           )}
           <div className="text-center pt-2">
             <button
               onClick={() => {
-                setIsRegistering(!isRegistering);
-                setAuthMessage({ text: "", isError: false });
+                data.setIsRegistering(!data.isRegistering);
+                data.setAuthMessage({ text: "", isError: false });
               }}
-              className="text-xs font-semibold text-slate-500 hover:text-white transition-all underline decoration-slate-800 underline-offset-4"
+              className="text-xs font-semibold text-slate-500 hover:text-white transition-all underline underline-offset-4"
             >
-              {isRegistering
+              {data.isRegistering
                 ? "Already registered? Log in here"
                 : "Don't have an account? Sign up here"}
             </button>
@@ -548,7 +259,7 @@ function App() {
               Ledger<span className="text-blue-500">Flow</span>
             </span>
             <p className="text-[10px] text-slate-600 font-mono mt-0.5">
-              V4_SaaS_SECURE
+              V4_SaaS_MODULAR
             </p>
           </div>
           <nav className="space-y-1">
@@ -562,11 +273,11 @@ function App() {
         </div>
         <div className="border-t border-slate-900 pt-4 flex flex-col space-y-3">
           <div className="text-xs text-slate-400 font-medium">
-            <span>👤 Active Account: {currentUser?.username}</span>
+            <span>👤 Account: {data.currentUser?.username}</span>
           </div>
           <button
-            onClick={handleLogout}
-            className="w-full bg-slate-900 hover:bg-red-950 border border-slate-800 hover:border-red-900/40 text-slate-400 hover:text-red-400 text-[11px] font-bold py-1.5 rounded-lg transition-all"
+            onClick={data.handleLogout}
+            className="w-full bg-slate-900 hover:bg-red-950 border border-slate-800 text-slate-400 text-[11px] font-bold py-1.5 rounded-lg transition-all"
           >
             Disconnect Session
           </button>
@@ -582,7 +293,7 @@ function App() {
             </h2>
           </div>
           <span className="text-[10px] font-mono text-slate-500">
-            AUTH: JWT_ACTIVE // ID: {currentUser?.id}
+            AUTH: JWT_ACTIVE // ID: {data.currentUser?.id}
           </span>
         </header>
 
@@ -592,295 +303,39 @@ function App() {
               Isolated Accounts Summary
             </h1>
             <p className="mt-1 text-xs text-slate-400">
-              Monitor active accounts receivable balances, liquid cash assets,
-              and client profiles unique to your session.
+              Monitor multi-tenant metrics using clean decoupled modular
+              components.
             </p>
           </div>
 
-          <div className="grid gap-6 sm:grid-cols-3">
-            <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
-              <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                <span>Accounts Receivable</span>
-                <span className="text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded text-[9px]">
-                  ⏳ Pending
-                </span>
-              </div>
-              <h3 className="mt-4 text-2xl font-bold font-mono text-white">
-                {loading
-                  ? "..."
-                  : formatCurrency(metrics.total_outstanding_cents)}
-              </h3>
-              <div className="absolute top-0 right-0 h-[2px] w-0 bg-amber-500 group-hover:w-full transition-all duration-300"></div>
-            </div>
-            <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
-              <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                <span>Revenue Collected</span>
-                <span className="text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded text-[9px]">
-                  💰 Settled
-                </span>
-              </div>
-              <h3 className="mt-4 text-2xl font-bold font-mono text-emerald-400">
-                {loading
-                  ? "..."
-                  : formatCurrency(metrics.total_collected_cents)}
-              </h3>
-              <div className="absolute top-0 right-0 h-[2px] w-0 bg-emerald-500 group-hover:w-full transition-all duration-300"></div>
-            </div>
-            <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
-              <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                <span>Active Clients</span>
-                <span className="text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded text-[9px]">
-                  👥 Profiles
-                </span>
-              </div>
-              <h3 className="mt-4 text-2xl font-bold font-mono text-white">
-                {loading ? "..." : metrics.total_clients_count}
-              </h3>
-              <div className="absolute top-0 right-0 h-[2px] w-0 bg-blue-500 group-hover:w-full transition-all duration-300"></div>
-            </div>
-          </div>
+          {/* ⚡ MOUNT MODULAR COMPONENTS CHANNELS */}
+          <MetricCards loading={data.loading} metrics={data.metrics} />
+          <CashflowChart metrics={data.metrics} />
 
           <div className="grid gap-6 md:grid-cols-2">
-            {/* CLIENT REGISTER PANEL */}
-            <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4 flex flex-col justify-between">
-              <div className="space-y-1">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                  // Register Client
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Inject buyer rows directly to your database roledex.
-                </p>
-              </div>
-              <form onSubmit={handleCreateClient} className="space-y-3 text-xs">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">
-                    Client Name
-                  </label>
-                  <input
-                    type="text"
-                    value={clientName}
-                    onChange={(e) => setClientName(e.target.value)}
-                    placeholder="e.g. Wally West"
-                    className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    value={clientEmail}
-                    onChange={(e) => setClientEmail(e.target.value)}
-                    placeholder="e.g. wally@west.com"
-                    className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={clientSubmitting}
-                  className="w-full bg-zinc-100 hover:bg-zinc-200 text-[#09090b] font-bold py-2 rounded-xl transition-all shadow-sm font-semibold disabled:opacity-50"
-                >
-                  {clientSubmitting ? "Saving..." : "Save Profile"}
-                </button>
-              </form>
-              {clientMessage.text && (
-                <div
-                  className={`p-2.5 rounded-xl border text-[11px] font-mono ${clientMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
-                >
-                  {clientMessage.text}
-                </div>
-              )}
-            </section>
-
-            {/* INVOICE GENERATOR PANEL */}
-            {/* INVOICE GENERATOR PANEL (STAGE 4 DYNAMIC ARRAY RUNTIME ⚡) */}
-            <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4">
-              <div className="space-y-1">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                  // Generate Invoice
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Launch atomic transactions across multi-row asset logs.
-                </p>
-              </div>
-              <form
-                onSubmit={handleCreateInvoice}
-                className="space-y-3 text-xs"
-              >
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase">
-                      Target Buyer
-                    </label>
-                    <select
-                      value={selectedClientId}
-                      onChange={(e) => setSelectedClientId(e.target.value)}
-                      className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium"
-                    >
-                      <option value="">-- Choose Client --</option>
-                      {clientsList.map((client) => (
-                        <option key={client.id} value={client.id}>
-                          {client.name} (ID: {client.id})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase">
-                      Invoice Number
-                    </label>
-                    <input
-                      type="text"
-                      value={invoiceNumber}
-                      onChange={(e) => setInvoiceNumber(e.target.value)}
-                      placeholder="e.g. INV-004"
-                      className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">
-                    Due Date
-                  </label>
-                  <input
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium"
-                  />
-                </div>
-
-                {/* LINE ITEMS BLOCK HEADER WITH INTERACTIVE SPAWN BUTTON */}
-                {/* LINE ITEMS BLOCK HEADER WITH INTERACTIVE SPAWN BUTTON */}
-                <div className="border-t border-slate-900 pt-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                        // Line Item Details
-                      </div>
-                      {/* VISUAL TRACKING COUNTER: Tells the user exactly how many items exist */}
-                      <div className="text-[10px] font-mono text-blue-400 font-bold bg-blue-500/10 px-2 py-0.5 rounded-md inline-block border border-blue-500/20">
-                        {items.length}{" "}
-                        {items.length === 1
-                          ? "Item Row Active"
-                          : "Item Rows Active"}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleAddItemRow}
-                      className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-3 py-1.5 rounded-xl text-[10px] transition-all border border-blue-500/20 shadow-md shadow-blue-600/10"
-                    >
-                      [+] Add Item Line
-                    </button>
-                  </div>
-
-                  {/* EXPANDED VIEWPORT MATRIX: Expanded height and custom styling to reveal scrolling content */}
-                  <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1.5 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
-                    {items.map((item, index) => (
-                      <div
-                        key={index}
-                        className="p-3.5 rounded-xl border border-slate-900 bg-slate-950/60 space-y-2 relative group/row transition-all hover:border-slate-800"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-[9px] font-mono font-bold text-slate-500 bg-slate-900 px-1.5 py-0.5 rounded">
-                            ROW #{index + 1}
-                          </span>
-                          {items.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveItemRow(index)}
-                              className="text-slate-500 hover:text-red-400 text-[10px] font-bold transition-all"
-                            >
-                              ✕ Remove Row
-                            </button>
-                          )}
-                        </div>
-                        <input
-                          type="text"
-                          value={item.description}
-                          onChange={(e) =>
-                            handleItemFieldChange(
-                              index,
-                              "description",
-                              e.target.value,
-                            )
-                          }
-                          placeholder="Item Description (e.g. Frontend Consultation)"
-                          className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
-                        />
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <label className="text-[9px] font-bold text-slate-600 uppercase">
-                              Quantity
-                            </label>
-                            <input
-                              type="number"
-                              min="1"
-                              value={item.quantity}
-                              onChange={(e) =>
-                                handleItemFieldChange(
-                                  index,
-                                  "quantity",
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="Qty"
-                              className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[9px] font-bold text-slate-600 uppercase">
-                              Unit Price
-                            </label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0.01"
-                              value={item.price}
-                              onChange={(e) =>
-                                handleItemFieldChange(
-                                  index,
-                                  "price",
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="Price ($)"
-                              className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* SCROLL ALIVE FOOTER CUE: Appears automatically to assist user visibility */}
-                  {items.length > 2 && (
-                    <div className="text-center text-[9px] font-mono text-slate-600 tracking-wide animate-pulse pt-1">
-                      ↓ Scroll down to view all dynamic billing items ↓
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={invoiceSubmitting}
-                  className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl transition-all shadow-md shadow-blue-600/5 font-semibold disabled:opacity-50"
-                >
-                  {invoiceSubmitting
-                    ? "Processing Transaction..."
-                    : "Generate Multi-Item Invoice"}
-                </button>
-              </form>
-              {invoiceMessage.text && (
-                <div
-                  className={`p-2.5 rounded-xl border text-[11px] font-mono ${invoiceMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
-                >
-                  {invoiceMessage.text}
-                </div>
-              )}
-            </section>
+            <ClientForm
+              clientName={data.clientName}
+              setClientName={data.setClientName}
+              clientEmail={data.clientEmail}
+              setClientEmail={data.setClientEmail}
+              clientSubmitting={data.clientSubmitting}
+              clientMessage={data.clientMessage}
+              onSubmit={handleClientSubmitInternal}
+            />
+            <InvoiceForm
+              selectedClientId={data.selectedClientId}
+              setSelectedClientId={data.setSelectedClientId}
+              invoiceNumber={data.invoiceNumber}
+              setInvoiceNumber={data.setInvoiceNumber}
+              dueDate={data.dueDate}
+              setDueDate={data.setDueDate}
+              clientsList={data.clientsList}
+              invoiceSubmitting={data.invoiceSubmitting}
+              invoiceMessage={data.invoiceMessage}
+              items={data.items}
+              setItems={data.setItems}
+              onSubmit={handleInvoiceSubmitInternal}
+            />
           </div>
 
           <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4">
@@ -890,17 +345,17 @@ function App() {
                   // Real-Time Transaction Ledger
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Live operational data rows compiled directly via inner
-                  relational database SQL joints.
+                  Operational data rows compiled dynamically via query inner
+                  joints.
                 </p>
               </div>
               <div className="w-full sm:w-64">
                 <input
                   type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="🔍 Search Invoice # or Client Name..."
-                  className="w-full border border-slate-900 rounded-xl px-3 py-1.5 bg-slate-900 text-white text-xs focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-600"
+                  value={data.searchTerm}
+                  onChange={(e) => data.setSearchTerm(e.target.value)}
+                  placeholder="🔍 Search Ledger..."
+                  className="w-full border border-slate-900 rounded-xl px-3 py-1.5 bg-slate-900 text-white text-xs focus:outline-none"
                 />
               </div>
             </div>
@@ -942,11 +397,14 @@ function App() {
                           {new Date(inv.due_date).toLocaleDateString()}
                         </td>
                         <td className="p-4 font-mono font-bold text-white">
-                          {formatCurrency(inv.total_amount_cents)}
+                          {new Intl.NumberFormat("en-US", {
+                            style: "currency",
+                            currency: "USD",
+                          }).format(inv.total_amount_cents / 100)}
                         </td>
                         <td className="p-4 text-center">
                           <span
-                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${inv.status === "paid" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-amber-500/10 border-amber-500/20 text-amber-400"}`}
+                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${inv.status === "paid" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-amber-500/10 border-amber-500/20 text-amber-400"}`}
                           >
                             {inv.status}
                           </span>
@@ -956,13 +414,13 @@ function App() {
                             onClick={() =>
                               handleDownloadPdf(inv.id, inv.invoice_number)
                             }
-                            className="bg-slate-950 border border-slate-800 text-slate-300 font-semibold px-2.5 py-1 rounded-lg text-[11px] hover:bg-slate-800 hover:text-white transition-all shadow-sm"
+                            className="bg-slate-900 border border-slate-800 text-slate-300 font-semibold px-2.5 py-1 rounded-lg text-[11px] hover:bg-slate-800 hover:text-white transition-all shadow-sm"
                           >
                             PDF
                           </button>
                           {inv.status === "pending" && (
                             <button
-                              onClick={() => handleSettleInvoice(inv.id)}
+                              onClick={() => handleSettleInternal(inv.id)}
                               className="bg-white hover:bg-zinc-200 text-[#09090b] font-bold px-2.5 py-1 rounded-lg text-[11px] transition-all shadow-sm"
                             >
                               Settle
@@ -976,20 +434,6 @@ function App() {
               </table>
             </div>
           </section>
-
-          <div className="rounded-2xl border border-slate-900 bg-slate-950 p-5 font-mono text-[11px] text-slate-400 space-y-2">
-            <div className="text-[10px] text-slate-600 font-bold uppercase tracking-wider">
-              // PIPELINE ACTIVITY TELEMETRY
-            </div>
-            <div className="flex justify-between border-b border-slate-900 pb-1.5">
-              <span className="text-slate-500">PostgreSQL Database:</span>
-              <span className="text-emerald-400">CONNECTED // PORT 5433</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Express Routing API:</span>
-              <span className="text-emerald-400">ONLINE // PORT 3000</span>
-            </div>
-          </div>
         </main>
       </div>
     </div>

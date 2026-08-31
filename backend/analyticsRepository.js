@@ -1,22 +1,31 @@
 const pool = require("./db");
 
 const analyticsRepository = {
-  // Calculates top-level business statistics directly inside the database
-  async getOverviewMetrics() {
+  // ⚡ UPDATED STAGE 3: Computes financial totals isolated strictly to the active user account
+  async getOverviewMetrics(activeUserId) {
+    if (!activeUserId)
+      throw new Error("Authentication credential token required.");
+
+    // SQL DATA SHEET ENGINE: Computes pending, collected, and customer row metrics all in one pass
     const queryText = `
             SELECT 
-                COALESCE(SUM(ui.quantity * ui.unit_amount_cents) FILTER (WHERE i.status = 'pending'), 0) as total_outstanding_cents,
-                COALESCE(SUM(ui.quantity * ui.unit_amount_cents) FILTER (WHERE i.status = 'paid'), 0) as total_collected_cents,
-                (SELECT COUNT(*) FROM clients) as total_clients_count
+                COALESCE(SUM(CASE WHEN i.status = 'pending' THEN ii.quantity * ii.unit_amount_cents ELSE 0 END), 0)::INT AS total_outstanding_cents,
+                COALESCE(SUM(CASE WHEN i.status = 'paid' THEN ii.quantity * ii.unit_amount_cents ELSE 0 END), 0)::INT AS total_collected_cents,
+                (SELECT COUNT(*)::INT FROM clients WHERE user_id = $1) AS total_clients_count
             FROM invoices i
-            JOIN invoice_items ui ON i.id = ui.invoice_id;
+            LEFT JOIN invoice_items ii ON i.id = ii.invoice_id
+            WHERE i.user_id = $1;
         `;
 
-    const result = await pool.query(queryText);
-
-    // Use array destructuring to return the single object row cleanly
-    const [metrics] = result.rows;
-    return metrics;
+    try {
+      const result = await pool.query(queryText, [activeUserId]);
+      const [metrics] = result.rows; // Extracts the single calculation dictionary card
+      return metrics;
+    } catch (error) {
+      throw new Error(
+        `Failed to calculate business database analytics telemetry: ${error.message}`,
+      );
+    }
   },
 };
 

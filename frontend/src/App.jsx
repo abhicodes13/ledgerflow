@@ -2,7 +2,22 @@ import React, { useState, useEffect } from "react";
 
 function App() {
   // =========================================================================
-  // 1. DATA STATE TRACKING MODULES
+  // 1. SECURITY & SESSION MEMORY STATES (NEW STAGE 2)
+  // =========================================================================
+  const [token, setToken] = useState(localStorage.getItem("lf_token") || "");
+  const [currentUser, setCurrentUser] = useState(
+    JSON.parse(localStorage.getItem("lf_user")) || null,
+  );
+  const [isRegistering, setIsRegistering] = useState(false); // Flips between Login and Sign Up views
+
+  // Auth Form Input States
+  const [authUsername, setAuthUsername] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authMessage, setAuthMessage] = useState({ text: "", isError: false });
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+
+  // =========================================================================
+  // 2. SYSTEM DATA TELEMETRY STATES (STAGE 1 CORE)
   // =========================================================================
   const [metrics, setMetrics] = useState({
     total_outstanding_cents: 0,
@@ -11,12 +26,10 @@ function App() {
   });
   const [loading, setLoading] = useState(true);
   const [clientsList, setClientsList] = useState([]);
-
-  // NEW STORAGE MATRIX: Holds your complete transaction ledger pulled from Postgres
   const [invoicesList, setInvoicesList] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // Client Management Input States
+  // Core Data Forms Input States
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientMessage, setClientMessage] = useState({
@@ -25,7 +38,6 @@ function App() {
   });
   const [clientSubmitting, setClientSubmitting] = useState(false);
 
-  // Invoice Generator Input States
   const [selectedClientId, setSelectedClientId] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -39,9 +51,10 @@ function App() {
   const [invoiceSubmitting, setInvoiceSubmitting] = useState(false);
 
   // =========================================================================
-  // 2. AUTOMATED BACKEND TELEMETRY PIPELINES
+  // 3. BACKGROUND FETCHERS (ONLY RUNS IF TOKEN EXISTS)
   // =========================================================================
   const fetchMetrics = () => {
+    if (!token) return;
     fetch("/api/analytics/overview")
       .then((res) => res.json())
       .then((payload) => {
@@ -52,32 +65,110 @@ function App() {
   };
 
   const fetchClientsList = () => {
+    if (!token) return;
     fetch("/api/clients")
       .then((res) => res.json())
       .then((payload) => {
         if (payload.clients) setClientsList(payload.clients);
       })
-      .catch((err) => console.error("❌ Dropdown sync drop:", err));
+      .catch((err) => console.error("❌ Dropdown lookup breakdown:", err));
   };
 
-  // NEW TELEMETRY: Queries backend GET /api/invoices path to refresh the log grid rows
   const fetchInvoicesList = () => {
+    if (!token) return;
     fetch("/api/invoices")
       .then((res) => res.json())
       .then((payload) => {
         if (payload.invoices) setInvoicesList(payload.invoices);
       })
-      .catch((err) => console.error("❌ Ledger table sync drop:", err));
+      .catch((err) => console.error("❌ Ledger grid lookup breakdown:", err));
   };
 
   useEffect(() => {
-    fetchMetrics();
-    fetchClientsList();
-    fetchInvoicesList(); // ◄── Pulls database invoice files once canvas mounts
-  }, []);
+    if (token) {
+      fetchMetrics();
+      fetchClientsList();
+      fetchInvoicesList();
+    }
+  }, [token]);
 
   // =========================================================================
-  // 3. ACTION EVENT HANDLERS (THE ECOSYSTEM WIRE CROSSERS)
+  // 4. SECURITY & AUTH ACTION EVENT HANDLERS
+  // =========================================================================
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    if (!authUsername || !authPassword) {
+      setAuthMessage({
+        text: "Credentials fields cannot be left blank.",
+        isError: true,
+      });
+      return;
+    }
+    setAuthSubmitting(true);
+    setAuthMessage({ text: "", isError: false });
+
+    // Determine target API pathway based on current interface view state flag
+    const endpointPath = isRegistering
+      ? "/api/auth/register"
+      : "/api/auth/login";
+
+    try {
+      const res = await fetch(endpointPath, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: authUsername,
+          password: authPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(
+          data.error || "Security authentication gate rejected request.",
+        );
+
+      if (isRegistering) {
+        // Success path for Registration
+        setAuthMessage({
+          text: "Account profile created successfully! Switching to login view...",
+          isError: false,
+        });
+        setAuthUsername("");
+        setAuthPassword("");
+        setIsRegistering(false); // Snap back to login pane
+      } else {
+        // Success path for Login
+        localStorage.setItem("lf_token", data.token);
+        localStorage.setItem("lf_user", JSON.stringify(data.user));
+        setToken(data.token);
+        setCurrentUser(data.user);
+        setAuthUsername("");
+        setAuthPassword("");
+      }
+    } catch (err) {
+      setAuthMessage({ text: err.message, isError: true });
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("lf_token");
+    localStorage.removeItem("lf_user");
+    setToken("");
+    setCurrentUser(null);
+    setMetrics({
+      total_outstanding_cents: 0,
+      total_collected_cents: 0,
+      total_clients_count: 0,
+    });
+    setClientsList([]);
+    setInvoicesList([]);
+    setSearchTerm("");
+  };
+
+  // =========================================================================
+  // 5. CORE WORKSPACE DATA FORM HANDLERS
   // =========================================================================
   const handleCreateClient = async (e) => {
     e.preventDefault();
@@ -94,11 +185,14 @@ function App() {
     try {
       const res = await fetch("/api/clients", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`, // Passes security key blueprint check
+        },
         body: JSON.stringify({ name: clientName, email: clientEmail }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Server rejected creation.");
+      if (!res.ok) throw new Error(data.error || "Server rejected insertion.");
 
       setClientMessage({
         text: `Success: ${data.client.name} saved!`,
@@ -144,7 +238,10 @@ function App() {
     try {
       const res = await fetch("/api/invoices", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           client_id: parseInt(selectedClientId, 10),
           invoice_number: invoiceNumber,
@@ -166,7 +263,7 @@ function App() {
       setItemQuantity("1");
       setItemPrice("");
       fetchMetrics();
-      fetchInvoicesList(); // ◄── AUTO-RELOAD: Adds the new bill to your table instantly!
+      fetchInvoicesList();
     } catch (err) {
       setInvoiceMessage({ text: err.message, isError: true });
     } finally {
@@ -178,13 +275,16 @@ function App() {
     try {
       const res = await fetch(`/api/invoices/${targetId}/settle`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Settlement failed.");
 
       fetchMetrics();
-      fetchInvoicesList(); // ◄── AUTO-RELOAD: Refreshes financial records live!
+      fetchInvoicesList();
     } catch (err) {
       console.error("❌ Settlement connection drop:", err.message);
     }
@@ -204,11 +304,111 @@ function App() {
     );
   });
 
+  // =========================================================================
+  // 6. DYNAMIC UI PRESENTATION RENDERING LAYER
+  // =========================================================================
+
+  // GATEKEEPER CONDITION: If token is missing, trap viewport inside the Auth Screen Overlay
+  if (!token) {
+    return (
+      <div className="flex min-h-screen bg-slate-950 text-slate-100 antialiased font-sans items-center justify-center p-6">
+        <div className="w-full max-w-sm rounded-2xl border border-slate-900 bg-slate-950 p-8 space-y-6 shadow-xl shadow-black/40">
+          {/* Platform Branding Emblem */}
+          <div className="text-center space-y-1">
+            <span className="text-2xl font-black tracking-tight text-white">
+              Ledger<span className="text-blue-500">Flow</span>
+            </span>
+            <p className="text-[10px] text-slate-600 font-mono uppercase tracking-widest">
+              SaaS_Gateway_V4
+            </p>
+          </div>
+
+          <div className="space-y-1 text-center">
+            <h2 className="text-base font-bold text-white tracking-tight">
+              {isRegistering
+                ? "Create Administrative Account"
+                : "Authenticate Session Login"}
+            </h2>
+            <p className="text-xs text-slate-500">
+              {isRegistering
+                ? "Provision private multi-tenant asset rows."
+                : "Access sandboxed cashflow summaries."}
+            </p>
+          </div>
+
+          {/* Secure Credential Input Forms */}
+          <form onSubmit={handleAuthSubmit} className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                Account Username
+              </label>
+              <input
+                type="text"
+                value={authUsername}
+                onChange={(e) => setAuthUsername(e.target.value)}
+                placeholder="e.g. AbhiAdmin"
+                className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                Secure Password
+              </label>
+              <input
+                type="password"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                placeholder="••••••••••••"
+                className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={authSubmitting}
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl transition-all shadow-md shadow-blue-600/10 font-semibold disabled:opacity-50"
+            >
+              {authSubmitting
+                ? "Authenticating Encryption..."
+                : isRegistering
+                  ? "Sign Up Profile"
+                  : "Sign In Session"}
+            </button>
+          </form>
+
+          {/* Inline Authentication System Feedback Alerts */}
+          {authMessage.text && (
+            <div
+              className={`p-2.5 rounded-xl border text-[11px] font-mono text-center ${authMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
+            >
+              {authMessage.text}
+            </div>
+          )}
+
+          {/* Toggle Link Between Registration / Login Panes */}
+          <div className="text-center pt-2">
+            <button
+              onClick={() => {
+                setIsRegistering(!isRegistering);
+                setAuthMessage({ text: "", isError: false });
+              }}
+              className="text-xs font-semibold text-slate-500 hover:text-white transition-all underline decoration-slate-800 underline-offset-4"
+            >
+              {isRegistering
+                ? "Already registered? Log in here"
+                : "Don't have an account? Sign up here"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // PLATFORM UNLOCKED LAYOUT CANVAS (TRIGGERED IF TOKEN MATCHES VALID KEYS)
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-100 antialiased font-sans">
-      {/* ========================================================================= */}
-      {/* 4. LEFT SIDEBAR NAVIGATION CONTROL */}
-      {/* ========================================================================= */}
+      {/* LEFT SIDEBAR NAVIGATION */}
       <aside className="w-64 border-r border-slate-900 bg-slate-950 p-6 flex flex-col justify-between hidden md:flex">
         <div className="space-y-8">
           <div>
@@ -216,7 +416,7 @@ function App() {
               Ledger<span className="text-blue-500">Flow</span>
             </span>
             <p className="text-[10px] text-slate-600 font-mono mt-0.5">
-              V4_CORE_ACTIVE
+              V4_SaaS_SECURE
             </p>
           </div>
           <nav className="space-y-1">
@@ -240,41 +440,45 @@ function App() {
             </a>
           </nav>
         </div>
-        <div className="border-t border-slate-900 pt-4 text-xs text-slate-400">
-          <span>👨‍💻 Abhi (Admin)</span>
+        <div className="border-t border-slate-900 pt-4 flex flex-col space-y-3">
+          <div className="text-xs text-slate-400 font-medium">
+            <span>👤 Active Account: {currentUser?.username}</span>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="w-full bg-slate-900 hover:bg-red-950 border border-slate-800 hover:border-red-900/40 text-slate-400 hover:text-red-400 text-[11px] font-bold py-1.5 rounded-lg transition-all"
+          >
+            Disconnect Session
+          </button>
         </div>
       </aside>
 
-      {/* ========================================================================= */}
-      {/* 5. MAIN CONTENT CANVAS LAYER */}
-      {/* ========================================================================= */}
+      {/* RIGHT MAIN WORKSPACE CONTENT WINDOW */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* TOP STATUS CONTROL HEADER */}
         <header className="border-b border-slate-900 bg-slate-950 px-8 py-5 flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse"></span>
             <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-              Workspace Dashboard
+              Sandboxed Tenant Workspace
             </h2>
           </div>
           <span className="text-[10px] font-mono text-slate-500">
-            SVR: 3000 // DB: 5433
+            AUTH: JWT_ACTIVE // ID: {currentUser?.id}
           </span>
         </header>
-
-        {/* INNER SCROLL PANEL WRAPPER */}
+        {/* MAIN DATA MONITOR AREA */}
         <main className="flex-1 overflow-y-auto px-8 py-8 max-w-5xl w-full mx-auto space-y-8">
           <div>
             <h1 className="text-2xl font-black text-white tracking-tight">
-              Financial Control Summary
+              Isolated Accounts Summary
             </h1>
             <p className="mt-1 text-xs text-slate-400">
               Monitor active accounts receivable balances, liquid cash assets,
-              and client profiles.
+              and client profiles unique to your session.
             </p>
           </div>
 
-          {/* DYNAMIC TELEMETRY STATISTICS CARDS */}
+          {/* DYNAMIC METRIC CARDS */}
           <div className="grid gap-6 sm:grid-cols-3">
             {/* CARD 1: ACCOUNTS RECEIVABLE */}
             <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
@@ -292,7 +496,7 @@ function App() {
               <div className="absolute top-0 right-0 h-[2px] w-0 bg-amber-500 group-hover:w-full transition-all duration-300"></div>
             </div>
 
-            {/* CARD 2: LIQUID CASH FLOW REVENUE */}
+            {/* CARD 2: REVENUE COLLECTED */}
             <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
               <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                 <span>Revenue Collected</span>
@@ -308,7 +512,7 @@ function App() {
               <div className="absolute top-0 right-0 h-[2px] w-0 bg-emerald-500 group-hover:w-full transition-all duration-300"></div>
             </div>
 
-            {/* CARD 3: CLIENT REGISTRY DIRECTORIES */}
+            {/* CARD 3: ACTIVE CLIENTS COUNTER */}
             <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
               <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                 <span>Active Clients</span>
@@ -323,11 +527,9 @@ function App() {
             </div>
           </div>
 
-          {/* DUAL WORKSPACE SPLIT BLOCK RENDERER */}
+          {/* DUAL COLUMN DATA INPUT PANELS */}
           <div className="grid gap-6 md:grid-cols-2">
-            {/* ========================================================================= */}
-            {/* 6. CLIENT REGISTRATION SHEET */}
-            {/* ========================================================================= */}
+            {/* CLIENT REGISTER PANEL */}
             <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4 flex flex-col justify-between">
               <div className="space-y-1">
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">
@@ -381,9 +583,7 @@ function App() {
               )}
             </section>
 
-            {/* ========================================================================= */}
-            {/* 7. UPGRADED INVOICE CREATOR PANEL WITH DYNAMIC DROPDOWN */}
-            {/* ========================================================================= */}
+            {/* INVOICE CREATOR PANEL */}
             <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4">
               <div className="space-y-1">
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">
@@ -399,7 +599,6 @@ function App() {
                 className="space-y-3 text-xs"
               >
                 <div className="grid grid-cols-2 gap-3">
-                  {/* DYNAMIC SELECTION CHIP */}
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase">
                       Target Buyer
@@ -417,7 +616,6 @@ function App() {
                       ))}
                     </select>
                   </div>
-
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase">
                       Invoice Number
@@ -443,7 +641,6 @@ function App() {
                     className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium"
                   />
                 </div>
-
                 <div className="border-t border-slate-900 pt-3 space-y-2">
                   <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
                     // Line Item Details
@@ -494,27 +691,28 @@ function App() {
               )}
             </section>
           </div>
-          {/* ========================================================================= */}
-          {/* 8. LIVE TRANSACTION LEDGER HISTORY BOARD */}
-          {/* ========================================================================= */}
+
+          {/* REAL-TIME TRANSACTION LEDGER BOARD */}
           <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4">
-            <div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                // Real-Time Transaction Ledger
-              </h3>
-              <p className="text-[11px] text-slate-500">
-                Live operational data rows compiled directly via inner
-                relational database SQL joints.
-              </p>
-            </div>
-            <div className="w-full sm:w-64">
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="🔍 Search Invoice # or Client Name..."
-                className="w-full border border-slate-900 rounded-xl px-3 py-1.5 bg-slate-900 text-white text-xs focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-600"
-              />
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  // Real-Time Transaction Ledger
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Live operational data rows compiled directly via inner
+                  relational database SQL joints.
+                </p>
+              </div>
+              <div className="w-full sm:w-64">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="🔍 Search Invoice # or Client Name..."
+                  className="w-full border border-slate-900 rounded-xl px-3 py-1.5 bg-slate-900 text-white text-xs focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-600"
+                />
+              </div>
             </div>
 
             <div className="overflow-x-auto border border-slate-900 rounded-xl bg-slate-950">
@@ -530,14 +728,13 @@ function App() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-900/60 font-medium">
-                  {invoicesList.length === 0 ? (
+                  {filteredInvoices.length === 0 ? (
                     <tr>
                       <td
                         colSpan="6"
                         className="p-8 text-center text-slate-600 font-mono"
                       >
-                        No transactional logs found inside PostgreSQL data
-                        pools.
+                        No matching transactional records located.
                       </td>
                     </tr>
                   ) : (
@@ -570,7 +767,6 @@ function App() {
                           </span>
                         </td>
                         <td className="p-4 text-right flex items-center justify-end gap-2">
-                          {/* ⚡ NEW COMPONENT FEATURE: LIVE DOWNLOAD LINK BLOCKS */}
                           <a
                             href={`/api/invoices/${inv.id}/pdf`}
                             download
@@ -578,7 +774,6 @@ function App() {
                           >
                             PDF
                           </a>
-
                           {inv.status === "pending" && (
                             <button
                               onClick={() => handleSettleInvoice(inv.id)}
@@ -596,7 +791,7 @@ function App() {
             </div>
           </section>
 
-          {/* ACTIVITY TELEMETRY FOOTER */}
+          {/* PIPELINE TELEMETRY FOOTER */}
           <div className="rounded-2xl border border-slate-900 bg-slate-950 p-5 font-mono text-[11px] text-slate-400 space-y-2">
             <div className="text-[10px] text-slate-600 font-bold uppercase tracking-wider">
               // PIPELINE ACTIVITY TELEMETRY

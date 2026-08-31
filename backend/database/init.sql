@@ -1,40 +1,36 @@
--- 1. Create the Clients Table safely
-CREATE TABLE IF NOT EXISTS clients (
+-- 1. Create the Master Users System Directory Table
+CREATE TABLE users (
     id SERIAL PRIMARY KEY,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. Create the Base Normalized Clients Table with Multi-Tenant Links
+CREATE TABLE clients (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. Create the Invoices Table safely
-CREATE TABLE IF NOT EXISTS invoices (
+-- 3. Create the Invoices Parent Containers
+CREATE TABLE invoices (
     id SERIAL PRIMARY KEY,
-    client_id INT NOT NULL,
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    client_id INT NOT NULL REFERENCES clients(id) ON DELETE RESTRICT,
     invoice_number VARCHAR(50) UNIQUE NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'draft',
+    status VARCHAR(20) DEFAULT 'pending',
     due_date DATE NOT NULL,
-    pdf_url TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    
-    CONSTRAINT fk_client 
-        FOREIGN KEY (client_id) 
-        REFERENCES clients(id) 
-        ON DELETE RESTRICT,
-        
-    CONSTRAINT chk_status 
-        CHECK (status IN ('draft', 'pending', 'paid', 'overdue'))
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. Create the Invoice Items Table safely
-CREATE TABLE IF NOT EXISTS invoice_items (
+-- 4. Create the Individual Invoice Line Items
+CREATE TABLE invoice_items (
     id SERIAL PRIMARY KEY,
-    invoice_id INT NOT NULL,
-    description TEXT NOT NULL,
-    quantity INT NOT NULL CHECK (quantity > 0),
-    unit_amount_cents INT NOT NULL CHECK (unit_amount_cents >= 0),
-    
-    CONSTRAINT fk_invoice 
-        FOREIGN KEY (invoice_id) 
-        REFERENCES invoices(id) 
-        ON DELETE CASCADE
+    invoice_id INT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    description VARCHAR(255) NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    unit_amount_cents INT NOT NULL
 );

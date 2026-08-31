@@ -4,6 +4,7 @@ const clientService = require("./clientService");
 const invoiceService = require("./invoiceService"); // 1. Import our new invoice service layer
 const analyticsRepository = require("./analyticsRepository");
 const PDFDocument = require("pdfkit");
+const authService = require("./authService");
 
 const app = express();
 const PORT = 3000;
@@ -251,6 +252,29 @@ app.get("/api/invoices/:id/pdf", async (req, res) => {
     return res
       .status(500)
       .json({ error: "Failed to compile financial PDF asset stream." });
+  }
+});
+
+app.post("/api/auth/register", async (req, res) => {
+  const { username, password } = req.body;
+  try {
+    const newUser = await authService.register(username, password);
+    return res.status(201).json({ success: true, user: newUser });
+  } catch (error) {
+    return res.status(400).json({ status: false, error: error.message });
+  }
+});
+app.post("/api/auth/login", async (req, res) => {
+  const { username, password } = req.body;
+  try {
+    const session = await authService.login(username, password);
+    return res.json({
+      success: true,
+      token: session.token,
+      user: session.user,
+    });
+  } catch (error) {
+    return res.status(401).json({ success: false, error: error.message });
   }
 });
 

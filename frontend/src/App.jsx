@@ -2,13 +2,13 @@ import React, { useState, useEffect } from "react";
 
 function App() {
   // =========================================================================
-  // 1. SECURITY & SESSION MEMORY STATES (NEW STAGE 2)
+  // 1. SECURITY & SESSION MEMORY STATES
   // =========================================================================
   const [token, setToken] = useState(localStorage.getItem("lf_token") || "");
   const [currentUser, setCurrentUser] = useState(
     JSON.parse(localStorage.getItem("lf_user")) || null,
   );
-  const [isRegistering, setIsRegistering] = useState(false); // Flips between Login and Sign Up views
+  const [isRegistering, setIsRegistering] = useState(false);
 
   // Auth Form Input States
   const [authUsername, setAuthUsername] = useState("");
@@ -17,7 +17,7 @@ function App() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
   // =========================================================================
-  // 2. SYSTEM DATA TELEMETRY STATES (STAGE 1 CORE)
+  // 2. SYSTEM DATA TELEMETRY STATES
   // =========================================================================
   const [metrics, setMetrics] = useState({
     total_outstanding_cents: 0,
@@ -51,11 +51,13 @@ function App() {
   const [invoiceSubmitting, setInvoiceSubmitting] = useState(false);
 
   // =========================================================================
-  // 3. BACKGROUND FETCHERS (ONLY RUNS IF TOKEN EXISTS)
+  // 3. BACKGROUND SECURED FETCHERS (STAGE 3 HEADERS LOADED ⚡)
   // =========================================================================
   const fetchMetrics = () => {
     if (!token) return;
-    fetch("/api/analytics/overview")
+    fetch("/api/analytics/overview", {
+      headers: { Authorization: `Bearer ${token}` }, // ◄── Pass security gate!
+    })
       .then((res) => res.json())
       .then((payload) => {
         if (payload.data) setMetrics(payload.data);
@@ -66,7 +68,9 @@ function App() {
 
   const fetchClientsList = () => {
     if (!token) return;
-    fetch("/api/clients")
+    fetch("/api/clients", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((res) => res.json())
       .then((payload) => {
         if (payload.clients) setClientsList(payload.clients);
@@ -76,7 +80,9 @@ function App() {
 
   const fetchInvoicesList = () => {
     if (!token) return;
-    fetch("/api/invoices")
+    fetch("/api/invoices", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((res) => res.json())
       .then((payload) => {
         if (payload.invoices) setInvoicesList(payload.invoices);
@@ -107,7 +113,6 @@ function App() {
     setAuthSubmitting(true);
     setAuthMessage({ text: "", isError: false });
 
-    // Determine target API pathway based on current interface view state flag
     const endpointPath = isRegistering
       ? "/api/auth/register"
       : "/api/auth/login";
@@ -128,16 +133,14 @@ function App() {
         );
 
       if (isRegistering) {
-        // Success path for Registration
         setAuthMessage({
           text: "Account profile created successfully! Switching to login view...",
           isError: false,
         });
         setAuthUsername("");
         setAuthPassword("");
-        setIsRegistering(false); // Snap back to login pane
+        setIsRegistering(false);
       } else {
-        // Success path for Login
         localStorage.setItem("lf_token", data.token);
         localStorage.setItem("lf_user", JSON.stringify(data.user));
         setToken(data.token);
@@ -168,7 +171,7 @@ function App() {
   };
 
   // =========================================================================
-  // 5. CORE WORKSPACE DATA FORM HANDLERS
+  // 5. CORE WORKSPACE DATA FORM HANDLERS (STAGE 3 AUTH-HEADERS LOADED ⚡)
   // =========================================================================
   const handleCreateClient = async (e) => {
     e.preventDefault();
@@ -187,7 +190,7 @@ function App() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`, // Passes security key blueprint check
+          Authorization: `Bearer ${token}`, // ◄── Pass Stage 3 verification fences!
         },
         body: JSON.stringify({ name: clientName, email: clientEmail }),
       });
@@ -195,7 +198,7 @@ function App() {
       if (!res.ok) throw new Error(data.error || "Server rejected insertion.");
 
       setClientMessage({
-        text: `Success: ${data.client.name} saved!`,
+        text: `Success: ${clientName} saved!`,
         isError: false,
       });
       setClientName("");
@@ -240,7 +243,7 @@ function App() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`, // ◄── Pass Stage 3 verification fences!
         },
         body: JSON.stringify({
           client_id: parseInt(selectedClientId, 10),
@@ -277,11 +280,14 @@ function App() {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`, // ◄── Pass Stage 3 verification fences!
         },
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Settlement failed.");
+      if (!res.ok)
+        throw new Error(
+          data.error || "Challenge response verification failed.",
+        );
 
       fetchMetrics();
       fetchInvoicesList();
@@ -304,16 +310,36 @@ function App() {
     );
   });
 
+  const handleDownloadPdf = async (invoiceId, invoiceNumber) => {
+    try {
+      const res = await fetch(`/api/invoices/${invoiceId}/pdf`, {
+        headers: {
+          Authorization: `Bearer ${token}`, // ◄── Passes security verification!
+        },
+      });
+      if (!res.ok) throw new Error("Failed to download PDF stream.");
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `STATEMENT-${invoiceNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("❌ PDF Download Error:", err.message);
+    }
+  };
+
   // =========================================================================
   // 6. DYNAMIC UI PRESENTATION RENDERING LAYER
   // =========================================================================
-
-  // GATEKEEPER CONDITION: If token is missing, trap viewport inside the Auth Screen Overlay
   if (!token) {
     return (
       <div className="flex min-h-screen bg-slate-950 text-slate-100 antialiased font-sans items-center justify-center p-6">
         <div className="w-full max-w-sm rounded-2xl border border-slate-900 bg-slate-950 p-8 space-y-6 shadow-xl shadow-black/40">
-          {/* Platform Branding Emblem */}
           <div className="text-center space-y-1">
             <span className="text-2xl font-black tracking-tight text-white">
               Ledger<span className="text-blue-500">Flow</span>
@@ -322,7 +348,6 @@ function App() {
               SaaS_Gateway_V4
             </p>
           </div>
-
           <div className="space-y-1 text-center">
             <h2 className="text-base font-bold text-white tracking-tight">
               {isRegistering
@@ -335,8 +360,6 @@ function App() {
                 : "Access sandboxed cashflow summaries."}
             </p>
           </div>
-
-          {/* Secure Credential Input Forms */}
           <form onSubmit={handleAuthSubmit} className="space-y-4 text-xs">
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
@@ -350,7 +373,6 @@ function App() {
                 className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
               />
             </div>
-
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                 Secure Password
@@ -363,7 +385,6 @@ function App() {
                 className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium placeholder:text-slate-700"
               />
             </div>
-
             <button
               type="submit"
               disabled={authSubmitting}
@@ -376,8 +397,6 @@ function App() {
                   : "Sign In Session"}
             </button>
           </form>
-
-          {/* Inline Authentication System Feedback Alerts */}
           {authMessage.text && (
             <div
               className={`p-2.5 rounded-xl border text-[11px] font-mono text-center ${authMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
@@ -385,8 +404,6 @@ function App() {
               {authMessage.text}
             </div>
           )}
-
-          {/* Toggle Link Between Registration / Login Panes */}
           <div className="text-center pt-2">
             <button
               onClick={() => {
@@ -405,10 +422,8 @@ function App() {
     );
   }
 
-  // PLATFORM UNLOCKED LAYOUT CANVAS (TRIGGERED IF TOKEN MATCHES VALID KEYS)
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-100 antialiased font-sans">
-      {/* LEFT SIDEBAR NAVIGATION */}
       <aside className="w-64 border-r border-slate-900 bg-slate-950 p-6 flex flex-col justify-between hidden md:flex">
         <div className="space-y-8">
           <div>
@@ -426,18 +441,6 @@ function App() {
             >
               <span>📊</span> <span>Dashboard</span>
             </a>
-            <a
-              href="#invoices"
-              className="flex items-center space-x-3 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-900 hover:text-white transition-all"
-            >
-              <span>🧾</span> <span>Invoices</span>
-            </a>
-            <a
-              href="#clients"
-              className="flex items-center space-x-3 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-900 hover:text-white transition-all"
-            >
-              <span>👥</span> <span>Clients</span>
-            </a>
           </nav>
         </div>
         <div className="border-t border-slate-900 pt-4 flex flex-col space-y-3">
@@ -453,7 +456,6 @@ function App() {
         </div>
       </aside>
 
-      {/* RIGHT MAIN WORKSPACE CONTENT WINDOW */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="border-b border-slate-900 bg-slate-950 px-8 py-5 flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -466,7 +468,7 @@ function App() {
             AUTH: JWT_ACTIVE // ID: {currentUser?.id}
           </span>
         </header>
-        {/* MAIN DATA MONITOR AREA */}
+
         <main className="flex-1 overflow-y-auto px-8 py-8 max-w-5xl w-full mx-auto space-y-8">
           <div>
             <h1 className="text-2xl font-black text-white tracking-tight">
@@ -478,9 +480,7 @@ function App() {
             </p>
           </div>
 
-          {/* DYNAMIC METRIC CARDS */}
           <div className="grid gap-6 sm:grid-cols-3">
-            {/* CARD 1: ACCOUNTS RECEIVABLE */}
             <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
               <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                 <span>Accounts Receivable</span>
@@ -495,8 +495,6 @@ function App() {
               </h3>
               <div className="absolute top-0 right-0 h-[2px] w-0 bg-amber-500 group-hover:w-full transition-all duration-300"></div>
             </div>
-
-            {/* CARD 2: REVENUE COLLECTED */}
             <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
               <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                 <span>Revenue Collected</span>
@@ -511,8 +509,6 @@ function App() {
               </h3>
               <div className="absolute top-0 right-0 h-[2px] w-0 bg-emerald-500 group-hover:w-full transition-all duration-300"></div>
             </div>
-
-            {/* CARD 3: ACTIVE CLIENTS COUNTER */}
             <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
               <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                 <span>Active Clients</span>
@@ -527,7 +523,6 @@ function App() {
             </div>
           </div>
 
-          {/* DUAL COLUMN DATA INPUT PANELS */}
           <div className="grid gap-6 md:grid-cols-2">
             {/* CLIENT REGISTER PANEL */}
             <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4 flex flex-col justify-between">
@@ -539,7 +534,6 @@ function App() {
                   Inject buyer rows directly to your database roledex.
                 </p>
               </div>
-
               <form onSubmit={handleCreateClient} className="space-y-3 text-xs">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase">
@@ -573,7 +567,6 @@ function App() {
                   {clientSubmitting ? "Saving..." : "Save Profile"}
                 </button>
               </form>
-
               {clientMessage.text && (
                 <div
                   className={`p-2.5 rounded-xl border text-[11px] font-mono ${clientMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
@@ -583,7 +576,7 @@ function App() {
               )}
             </section>
 
-            {/* INVOICE CREATOR PANEL */}
+            {/* INVOICE GENERATOR PANEL */}
             <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4">
               <div className="space-y-1">
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">
@@ -593,7 +586,6 @@ function App() {
                   Launch atomic transactions across multi-row asset logs.
                 </p>
               </div>
-
               <form
                 onSubmit={handleCreateInvoice}
                 className="space-y-3 text-xs"
@@ -629,7 +621,6 @@ function App() {
                     />
                   </div>
                 </div>
-
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase">
                     Due Date
@@ -641,6 +632,7 @@ function App() {
                     className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none focus:border-zinc-700 transition-all font-medium"
                   />
                 </div>
+
                 <div className="border-t border-slate-900 pt-3 space-y-2">
                   <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
                     // Line Item Details
@@ -672,7 +664,6 @@ function App() {
                     </div>
                   </div>
                 </div>
-
                 <button
                   type="submit"
                   disabled={invoiceSubmitting}
@@ -681,7 +672,6 @@ function App() {
                   {invoiceSubmitting ? "Processing..." : "Generate Invoice"}
                 </button>
               </form>
-
               {invoiceMessage.text && (
                 <div
                   className={`p-2.5 rounded-xl border text-[11px] font-mono ${invoiceMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
@@ -692,7 +682,6 @@ function App() {
             </section>
           </div>
 
-          {/* REAL-TIME TRANSACTION LEDGER BOARD */}
           <section className="rounded-2xl border border-slate-900 bg-slate-950 p-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
@@ -714,7 +703,6 @@ function App() {
                 />
               </div>
             </div>
-
             <div className="overflow-x-auto border border-slate-900 rounded-xl bg-slate-950">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
@@ -757,23 +745,20 @@ function App() {
                         </td>
                         <td className="p-4 text-center">
                           <span
-                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${
-                              inv.status === "paid"
-                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                                : "bg-amber-500/10 border-amber-500/20 text-amber-400"
-                            }`}
+                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${inv.status === "paid" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-amber-500/10 border-amber-500/20 text-amber-400"}`}
                           >
                             {inv.status}
                           </span>
                         </td>
                         <td className="p-4 text-right flex items-center justify-end gap-2">
-                          <a
-                            href={`/api/invoices/${inv.id}/pdf`}
-                            download
-                            className="bg-slate-900 border border-slate-800 text-slate-300 font-semibold px-2.5 py-1 rounded-lg text-[11px] hover:bg-slate-800 hover:text-white transition-all shadow-sm"
+                          <button
+                            onClick={() =>
+                              handleDownloadPdf(inv.id, inv.invoice_number)
+                            }
+                            className="bg-slate-950 border border-slate-800 text-slate-300 font-semibold px-2.5 py-1 rounded-lg text-[11px] hover:bg-slate-800 hover:text-white transition-all shadow-sm"
                           >
                             PDF
-                          </a>
+                          </button>
                           {inv.status === "pending" && (
                             <button
                               onClick={() => handleSettleInvoice(inv.id)}
@@ -791,7 +776,6 @@ function App() {
             </div>
           </section>
 
-          {/* PIPELINE TELEMETRY FOOTER */}
           <div className="rounded-2xl border border-slate-900 bg-slate-950 p-5 font-mono text-[11px] text-slate-400 space-y-2">
             <div className="text-[10px] text-slate-600 font-bold uppercase tracking-wider">
               // PIPELINE ACTIVITY TELEMETRY

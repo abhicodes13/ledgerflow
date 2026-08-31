@@ -2,7 +2,14 @@ const pool = require("./db"); // Import our raw pool to manage the transaction l
 const invoiceRepository = require("./invoiceRepository");
 
 const invoiceService = {
-  async createFullInvoice(clientId, invoiceNumber, dueDate, items) {
+  // ⚡ UPDATED STAGE 3: Packs parent entries and multi-row items into an atomic multi-tenant transaction
+  async createFullInvoice(
+    activeUserId,
+    clientId,
+    invoiceNumber,
+    dueDate,
+    items,
+  ) {
     // 1. Borrow a clean, dedicated network wire from our connection pool
     const client = await pool.connect();
 
@@ -10,14 +17,14 @@ const invoiceService = {
       // 2. Start the safety blanket: Begin the SQL Transaction
       await client.query("BEGIN");
 
-      // 3. Step 1: Save the invoice container row using our repository logic
-      // Note: We modify our repo slightly next to handle the transaction client wire
-      const queryTextInvoice = `
-                INSERT INTO invoices (client_id, invoice_number, due_date, status) 
-                VALUES ($1, $2, $3, 'pending') 
-                RETURNING *
+      // 3. Step 1: Save the invoice container row including the new user_id column lock
+      const queryTextInvoice = ` 
+                INSERT INTO invoices (user_id, client_id, invoice_number, due_date, status) 
+                VALUES ($1, $2, $3, $4, 'pending') 
+                RETURNING * 
             `;
       const invoiceResult = await client.query(queryTextInvoice, [
+        activeUserId, // ◄── Master Multi-Tenant Lock!
         clientId,
         invoiceNumber,
         dueDate,
@@ -27,21 +34,19 @@ const invoiceService = {
       // 4. Step 2: Loop through every single line item and save them
       const savedItems = [];
       for (const item of items) {
-        const queryTextItem = `
+        const queryTextItem = ` 
                     INSERT INTO invoice_items (invoice_id, description, quantity, unit_amount_cents) 
                     VALUES ($1, $2, $3, $4) 
-                    RETURNING *
+                    RETURNING * 
                 `;
         // Calculate whole integer cents to avoid decimal rounding errors
         const amountInCents = Math.round(item.price * 100);
-
         const itemResult = await client.query(queryTextItem, [
           newInvoice.id, // Links this item directly to our new invoice container id!
           item.description,
           item.quantity,
           amountInCents,
         ]);
-
         savedItems.push(itemResult.rows[0]);
       }
 
@@ -60,24 +65,44 @@ const invoiceService = {
         "❌ INVOICE TRANSACTION FAILED - ROLLED BACK:",
         error.message,
       );
-      throw error; // Pass the error to the controller so it can tell the frontend
+      throw error;
     } finally {
       // 7. CRUCIAL: Always hand the network wire back to the pool so other users can use it
       client.release();
     }
   },
-  async settleInvoiceBalance(invoiceId) {
-    if (!invoiceId) {
-      throw new Error("Missing required invoice identifier target");
+
+  // ⚡ UPDATED STAGE 3: Marks an invoice as PAID only if it belongs to the requesting tenant
+  async settleInvoiceBalance(invoiceId, activeUserId) {
+    if (!invoiceId || !activeUserId) {
+      throw new Error("Missing required transaction processing variables");
     }
+
+    // SECURITY CHECK: Verify that the invoice belongs to this user before updating it
+    const existingInvoice = await invoiceRepository.findById(invoiceId);
+    if (!existingInvoice) {
+      throw new Error(
+        "Target transactional record not found inside database pools.",
+      );
+    }
+    if (existingInvoice.user_id !== activeUserId) {
+      throw new Error(
+        "Access Forbidden: You do not possess structural ownership permissions for this record.",
+      );
+    }
+
     const updatedInvoice = await invoiceRepository.updateStatus(
       invoiceId,
       "paid",
     );
     return updatedInvoice;
   },
-  async getAllInvoices() {
-    return await invoiceRepository.findAll();
+
+  // ⚡ UPDATED STAGE 3: Pass activeUserId down to pull only this user's rows
+  async getAllInvoices(activeUserId) {
+    if (!activeUserId)
+      throw new Error("Authentication credential token required.");
+    return await invoiceRepository.findAll(activeUserId);
   },
 };
 

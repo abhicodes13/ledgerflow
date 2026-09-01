@@ -15,3 +15,7 @@ node_modules/
 
 # Ignore editor settings files
 .vscode/
+
+ledgerflow-key.pem
+*.pem
+dist/

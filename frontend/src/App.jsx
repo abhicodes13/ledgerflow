@@ -12,9 +12,12 @@ function App() {
   // Asynchronous Blob PDF Secure Downloader Implementation
   const handleDownloadPdf = async (invoiceId, invoiceNumber) => {
     try {
-      const res = await fetch(`/api/invoices/${invoiceId}/pdf`, {
-        headers: { Authorization: `Bearer ${data.token}` },
-      });
+      const res = await fetch(
+        `http://54.210.155.52:3000/api/invoices/${invoiceId}/pdf`,
+        {
+          headers: { Authorization: `Bearer ${data.token}` },
+        },
+      );
       if (!res.ok) throw new Error("Failed to download PDF stream.");
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -42,8 +45,8 @@ function App() {
     }
     data.setAuthMessage({ text: "", isError: false });
     const endpointPath = data.isRegistering
-      ? "/api/auth/register"
-      : "/api/auth/login";
+      ? "http://54.210.155.52:3000/api/auth/register"
+      : "http://54.210.155.52:3000/api/auth/login";
 
     try {
       const res = await fetch(endpointPath, {
@@ -86,7 +89,7 @@ function App() {
     e.preventDefault();
     if (!data.clientName || !data.clientEmail) return;
     try {
-      const res = await fetch("/api/clients", {
+      const res = await fetch("http://54.210.155.52:3000/api/clients", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -115,7 +118,7 @@ function App() {
   const handleInvoiceSubmitInternal = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/invoices", {
+      const res = await fetch("http://54.210.155.52:3000/api/invoices", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -150,7 +153,7 @@ function App() {
   };
 
   const handleSettleInternal = async (id) => {
-    await fetch(`/api/invoices/${id}/settle`, {
+    await fetch(`http://54.210.155.52:3000/api/invoices/${id}/settle`, {
       method: "PATCH",
       headers: { Authorization: `Bearer ${data.token}` },
     });

@@ -44,7 +44,7 @@ export function useLedgerFlowData() {
 
   const fetchMetrics = () => {
     if (!token) return;
-    fetch("/api/analytics/overview", {
+    fetch("http://54.210.155.52:3000/api/analytics/overview", {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())
@@ -57,7 +57,9 @@ export function useLedgerFlowData() {
 
   const fetchClientsList = () => {
     if (!token) return;
-    fetch("/api/clients", { headers: { Authorization: `Bearer ${token}` } })
+    fetch("http://54.210.155.52:3000/api/clients", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((res) => res.json())
       .then((payload) => {
         if (payload.clients) setClientsList(payload.clients);
@@ -67,7 +69,9 @@ export function useLedgerFlowData() {
 
   const fetchInvoicesList = () => {
     if (!token) return;
-    fetch("/api/invoices", { headers: { Authorization: `Bearer ${token}` } })
+    fetch("http://54.210.155.52:3000/api/invoices", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((res) => res.json())
       .then((payload) => {
         if (payload.invoices) setInvoicesList(payload.invoices);

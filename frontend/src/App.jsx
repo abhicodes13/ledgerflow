@@ -13,7 +13,7 @@ function App() {
   const handleDownloadPdf = async (invoiceId, invoiceNumber) => {
     try {
       const res = await fetch(
-        `http://54.210.155.52:3000/api/invoices/${invoiceId}/pdf`,
+        `http://54.242.227.226:3000/api/invoices/${invoiceId}/pdf`,
         {
           headers: { Authorization: `Bearer ${data.token}` },
         },
@@ -45,8 +45,8 @@ function App() {
     }
     data.setAuthMessage({ text: "", isError: false });
     const endpointPath = data.isRegistering
-      ? "http://54.210.155.52:3000/api/auth/register"
-      : "http://54.210.155.52:3000/api/auth/login";
+      ? "http://54.242.227.226:3000/api/auth/register"
+      : "http://54.242.227.226:3000/api/auth/login";
 
     try {
       const res = await fetch(endpointPath, {
@@ -89,7 +89,7 @@ function App() {
     e.preventDefault();
     if (!data.clientName || !data.clientEmail) return;
     try {
-      const res = await fetch("http://54.210.155.52:3000/api/clients", {
+      const res = await fetch("http://54.242.227.226:3000/api/clients", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -118,7 +118,7 @@ function App() {
   const handleInvoiceSubmitInternal = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch("http://54.210.155.52:3000/api/invoices", {
+      const res = await fetch("http://54.242.227.226:3000/api/invoices", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -153,7 +153,7 @@ function App() {
   };
 
   const handleSettleInternal = async (id) => {
-    await fetch(`http://54.210.155.52:3000/api/invoices/${id}/settle`, {
+    await fetch(`http://54.242.227.226:3000/api/invoices/${id}/settle`, {
       method: "PATCH",
       headers: { Authorization: `Bearer ${data.token}` },
     });
@@ -173,6 +173,7 @@ function App() {
     return (
       <div className="flex min-h-screen bg-slate-950 text-slate-100 antialiased font-sans items-center justify-center p-6">
         <div className="w-full max-w-sm rounded-2xl border border-slate-900 bg-slate-950 p-8 space-y-6 shadow-xl shadow-black/40">
+          {/* Brand Header Section */}
           <div className="text-center space-y-1">
             <span className="text-2xl font-black tracking-tight text-white">
               Ledger<span className="text-blue-500">Flow</span>
@@ -181,6 +182,8 @@ function App() {
               SaaS_Modular_V4
             </p>
           </div>
+
+          {/* Dynamic View Descriptions */}
           <div className="space-y-1 text-center">
             <h2 className="text-base font-bold text-white tracking-tight">
               {data.isRegistering
@@ -193,6 +196,8 @@ function App() {
                 : "Access sandboxed cashflow summaries."}
             </p>
           </div>
+
+          {/* Standard Form Actions Gateway */}
           <form
             onSubmit={handleAuthSubmitInternal}
             className="space-y-4 text-xs"
@@ -209,6 +214,7 @@ function App() {
                 className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none"
               />
             </div>
+
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase">
                 Secure Password
@@ -221,6 +227,7 @@ function App() {
                 className="w-full border border-slate-900 rounded-xl px-3 py-2 bg-slate-900 text-white focus:outline-none"
               />
             </div>
+
             <button
               type="submit"
               className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-xl transition-all shadow-md"
@@ -228,13 +235,73 @@ function App() {
               {data.isRegistering ? "Sign Up Profile" : "Sign In Session"}
             </button>
           </form>
+
+          {/* 🚀 THE ENTERPRISE RECRUITER GATEWAY: Injected seamlessly right under the form */}
+          {!data.isRegistering && (
+            <button
+              type="button"
+              onClick={async () => {
+                // 1. Automatically update your local UI hook states
+                data.setAuthUsername("demo_account");
+                data.setAuthPassword("demopass123");
+
+                // 2. Fire the token transaction directly to your live AWS EC2 server [2.1]
+                try {
+                  data.setAuthMessage({
+                    text: "Authenticating sandboxed session...",
+                    isError: false,
+                  });
+
+                  const res = await fetch(
+                    "http://54.242.227.226:3000/api/auth/login",
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        username: "demo_account",
+                        password: "demopass123",
+                      }),
+                    },
+                  );
+
+                  const resData = await res.json();
+
+                  if (resData.success) {
+                    data.setToken(resData.token); // Locks token in memory and logs them in! [2.1]
+                  } else {
+                    data.setAuthMessage({
+                      text: resData.error || "Authentication failed",
+                      isError: true,
+                    });
+                  }
+                } catch (err) {
+                  console.error("Demo login request error tracker:", err);
+                  data.setAuthMessage({
+                    text: "Network connection refused by cloud gateway",
+                    isError: true,
+                  });
+                }
+              }}
+              className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-2 rounded-xl transition-all shadow-md text-xs tracking-wide shadow-black/20"
+            >
+              ⚡ One-Click Recruiter Demo Login
+            </button>
+          )}
+
+          {/* System Toast Messages Log */}
           {data.authMessage.text && (
             <div
-              className={`p-2.5 rounded-xl border text-[11px] font-mono text-center ${data.authMessage.isError ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"}`}
+              className={`p-2.5 rounded-xl border text-[11px] font-mono text-center ${
+                data.authMessage.isError
+                  ? "bg-red-500/10 border-red-500/20 text-red-400"
+                  : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+              }`}
             >
               {data.authMessage.text}
             </div>
           )}
+
+          {/* View Toggle Trigger Link */}
           <div className="text-center pt-2">
             <button
               onClick={() => {

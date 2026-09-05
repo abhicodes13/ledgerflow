@@ -19,3 +19,9 @@ node_modules/
 ledgerflow-secure-key.pem
 *.pem
 dist/
+
+# 🛡️ Terraform Operational Clutter & System State Files
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars

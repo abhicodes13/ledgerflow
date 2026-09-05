@@ -12,20 +12,36 @@ A production-grade, highly resilient, secure multi-tenant financial ledger and a
 LedgerFlow splits its operational boundaries into a completely decoupled, high-performance distributed network topology to maximize horizontal scaling potential, ensure automated system deployment, and minimize resource cross-contamination.
 
 ```text
-📱 PUBLIC INTERNET CLIENT (Browser)
- │
- ├───► Downloads Static React UI Assets via AWS S3 Site Hosting (Automated via CI/CD)
- │
- ▼ (Fires RESTful API Data Payloads over Stateless JWT Tokens)
-💻 AMAZON EC2 VIRTUAL COMPUTE INSTANCE (Ubuntu Linux Server Core)
- ├───► Intercepts Network Floods via In-Memory Redis Cache Firewall (Port 6379)
- ├───► Orchestrates Logic Rules & Security Gates via Express Routers (Port 3000)
- ├───► Enforces Strict Database Client Pool Restrictions (max: 10 connections)
- └───► Ensures Background Runtime Process Lifecycle Resilience via PM2 Engine
- │
- ▼ (Secure Cryptographic SSL/TLS Handshake Tunnel)
-🗄️ AMAZON RDS MANAGED DATA WAREHOUSE (PostgreSQL Instance)
- └───► Enforces Parameterized Multi-Tenant Row Separation Boundaries
+                     [ 🌐 PUBLIC INTERNET CLIENTS ]
+                                   │
+      ┌────────────────────────────┴────────────────────────────┐
+      ▼ (HTTP / Port 80)                                        ▼ (HTTPS / Port 443)
+┌───────────────────────────┐                             ┌───────────────────────────┐
+│     PRODUCTION APP UI     │                             │      CI/CD AUTOMATION     │
+│   Hosted on AWS S3 Bucket │                             │      GitHub Actions       │
+│ Static Web Hosting Engine │                             │    Cloud Worker Nodes     │
+└───────────────────────────┘                             └─────────────┬─────────────┘
+      │                                                                 │
+      │ (Fires RESTful Payloads via Stateless JWTs)                     │ (Runs `aws s3 sync`)
+      ▼                                                                 ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│ 💻 AMAZON EC2 VIRTUAL COMPUTE INSTANCE (Ubuntu Linux OS Kernel Core)                │
+│                                                                                     │
+│    API Entryway ──► [ 🛡️ In-Memory Redis Cache Firewall ] ──► (Throttles Requests)   │
+│   (Node/Express)          Tracks traffic volumes in RAM          Drops Floods (HTTP 429)│
+│    [Port 3000]                                                                      │
+│                                                                                     │
+│    Database Driver ──► [ 🎛️ PostgreSQL Connection Pool ] ──► (Resource Defense)   │
+│   (node-postgres)         Capped Constraints (max: 10)          Queues Excess Queries │
+└───────────────────────────────────┬─────────────────────────────────────────────────┘
+                                    │
+                                    │ (Forced SSL/TLS Cryptographic Transport Tunnel)
+                                    ▼
+                      ┌───────────────────────────┐
+                      │    MANAGED DATA CORE      │
+                      │   AWS RDS PostgreSQL DB   │
+                      │ Parameterized Schema Guard│
+                      └───────────────────────────┘
 ```
 
 ---

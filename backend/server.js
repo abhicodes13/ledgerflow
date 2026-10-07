@@ -7,8 +7,13 @@ const PDFDocument = require("pdfkit");
 const authService = require("./authService");
 const authenticateToken = require("./authMiddleware"); // ⚡ Master Gatekeeper Guard
 
+const paymentRouter = require("./routes/payment");
+
 const app = express();
 const PORT = 3000;
+
+app.use("/api/payment", paymentRouter);
+
 app.use(express.json());
 
 // =========================================================================

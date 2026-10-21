@@ -3,8 +3,12 @@ CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
+    subscription_tier VARCHAR(50) DEFAULT 'unpaid', -- unpaid, MONTHLY, YEARLY [2.1]
+    stripe_customer_id VARCHAR(255) UNIQUE,         -- Stripe global reference ID token [2.1]
+    billing_status VARCHAR(50) DEFAULT 'inactive',  -- inactive, active, past_due [2.1]
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
 
 -- 2. Create the Base Normalized Clients Table with Multi-Tenant Links
 CREATE TABLE clients (

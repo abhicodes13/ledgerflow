@@ -249,14 +249,17 @@ function App() {
                     isError: false,
                   });
 
-                  const res = await fetch("http://54.196.141/api/auth/login", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      username: "demo_account",
-                      password: "demopass123",
-                    }),
-                  });
+                  const res = await fetch(
+                    "http://54.196.141.74:3000/api/auth/login",
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        username: "demo_account",
+                        password: "demopass123",
+                      }),
+                    },
+                  );
 
                   const resData = await res.json();
 

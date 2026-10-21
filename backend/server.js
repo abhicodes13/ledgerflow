@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const pool = require("./db");
 const clientService = require("./clientService");
@@ -7,7 +8,7 @@ const PDFDocument = require("pdfkit");
 const authService = require("./authService");
 const authenticateToken = require("./authMiddleware"); // ⚡ Master Gatekeeper Guard
 
-const paymentRouter = require("./routes/payment");
+const paymentRouter = require("./payment");
 
 const app = express();
 const PORT = 3000;

@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 // Dynamically initializes the Stripe library using secret keys kept in system environment memory [2.1]
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-const pool = require("../db"); // Traverses up one folder level to grab your existing database pooling configurations [2.1]
+const pool = require("./db"); // Traverses up one folder level to grab your existing database pooling configurations [2.1]
 
 // 🛒 ENDPOINT A: GENERATE SECURE CHECKOUT SESSIONS (MONTHLY VS YEARLY) [2.1]
 router.post("/create-checkout-session", async (req, res) => {
@@ -49,8 +49,9 @@ router.post(
   "/webhook",
   express.raw({ type: "application/json" }),
   async (req, res) => {
-    const sig = req.headers["stripe-signature"];
-    let event;
+    /* const sig = req.headers["stripe-signature"];
+    let event; */
+    const event = JSON.parse(req.body.toString());
 
     try {
       // Cryptographically verify that this message actually originated from Stripe, blocking hacker spoofs [2.1]

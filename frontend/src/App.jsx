@@ -249,7 +249,7 @@ function App() {
                     isError: false,
                   });
 
-                  const res = await fetch("/api/auth/login", {
+                  const res = await fetch("http://54.196.141/api/auth/login", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({

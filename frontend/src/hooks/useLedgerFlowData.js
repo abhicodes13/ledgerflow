@@ -44,7 +44,7 @@ export function useLedgerFlowData() {
 
   const fetchMetrics = () => {
     if (!token) return;
-    fetch("http://54.196.141.746:3000/api/analytics/overview", {
+    fetch("http://54.196.141.74:3000/api/analytics/overview", {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())

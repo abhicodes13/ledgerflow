@@ -7,11 +7,11 @@ const analyticsRepository = require("./analyticsRepository");
 const PDFDocument = require("pdfkit");
 const authService = require("./authService");
 const authenticateToken = require("./authMiddleware"); // ⚡ Master Gatekeeper Guard
-
+const checkSubscription = require("./subscriptionMiddleware");
 const paymentRouter = require("./payment");
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use("/api/payment", paymentRouter);
 
@@ -65,30 +65,35 @@ app.post("/api/auth/login", async (req, res) => {
 // =========================================================================
 
 // PATH A: REGISTER CLIENT UNDER ACTIVE USER ACCOUNT
-app.post("/api/clients", authenticateToken, async (req, res) => {
-  const activeUserId = req.user.userId; // Extracted safely from the encrypted JWT!
-  const { name, email } = req.body;
+app.post(
+  "/api/clients",
+  authenticateToken,
+  checkSubscription,
+  async (req, res) => {
+    const activeUserId = req.user.userId; // Extracted safely from the encrypted JWT!
+    const { name, email } = req.body;
 
-  if (!name || !email) {
-    return res
-      .status(400)
-      .json({ error: "Name and email are required fields." });
-  }
+    if (!name || !email) {
+      return res
+        .status(400)
+        .json({ error: "Name and email are required fields." });
+    }
 
-  try {
-    // ⚡ Pass activeUserId down to bind the fresh client to this user account
-    const newClient = await clientService.registerClient(
-      activeUserId,
-      name,
-      email,
-    );
-    return res
-      .status(201)
-      .json({ message: "Client created successfully", client: newClient });
-  } catch (error) {
-    return res.status(500).json({ error: error.message });
-  }
-});
+    try {
+      // ⚡ Pass activeUserId down to bind the fresh client to this user account
+      const newClient = await clientService.registerClient(
+        activeUserId,
+        name,
+        email,
+      );
+      return res
+        .status(201)
+        .json({ message: "Client created successfully", client: newClient });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  },
+);
 
 // PATH B: FETCH ALL CLIENTS LINKED TO ACTIVE USER ACCOUNT
 app.get("/api/clients", authenticateToken, async (req, res) => {
@@ -362,7 +367,7 @@ app.get("/api/invoices/:id/pdf", authenticateToken, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(
     `⚡ [LEDGERFLOW ENGINE] Secured multi-tenant gates running live on Port 3000.`,
   );

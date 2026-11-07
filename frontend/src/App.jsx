@@ -1,115 +1,176 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useLedgerFlowData } from "./hooks/useLedgerFlowData";
-import { MetricCards } from "./components/MetricCards";
-import { CashflowChart } from "./components/CashflowChart";
-import { ClientForm } from "./components/ClientForm";
-import { InvoiceForm } from "./components/InvoiceForm";
 import { AIConsole } from "./components/AIConsole";
+import { DashboardView } from "./pages/DashboardView";
+import { InvoicesView } from "./pages/InvoicesView";
+import { ClientsView } from "./pages/ClientsView";
 
 function App() {
   const data = useLedgerFlowData();
 
-  // 💻 LOCAL WORKSPACE VIEW STATE CONTROLLER (EXPANDED TO 5 PRODUCTION DOMAINS)
-  const [activeTab, setActiveTab] = useState("dashboard"); // Options: "dashboard", "billing", "customers", "automations", "settings"
+  // 🧭 PAGE ROUTING & VIEWPORT PANEL VISIBILITY STATES
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [isConsoleVisible, setIsConsoleVisible] = useState(true); // Open on desktop by default
+  const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
 
-  // 🌓 LOCAL TRUE CASCADING THEME STATE CONTROLLER (LIGHT/DARK AGNOSTIC)
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  // 🔐 ORIGINAL STATE INFRASTRUCTURE FOR USER AUTHENTICATION
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [authUsername, setAuthUsername] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authMessage, setAuthMessage] = useState({ text: "", isError: false });
 
-  // 🤖 LOCAL CHAT SUB-SYSTEM STATES
+  // 💬 CHAT HUB CONTROL DECK HANDLERS & STATUS HOOKS
   const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatBottomRef = useRef(null);
+
   const [chatMessages, setChatMessages] = useState([
     {
       type: "action_deck",
       sender: "ai",
-      text: "Hello! I am your LedgerFlow Autonomous Financial Assistant. Ask me to add clients, create invoice templates, or analyze business statistics hands-free.",
+      text: "Welcome to your LedgerFlow assistant. Click an active macro card below or input a standard text prompt to execute actions hands-free:",
     },
   ]);
-  const [chatLoading, setChatLoading] = useState(false);
-  const chatBottomRef = useRef(null);
-
-  // Auto-scroll chat panel to bottom on incoming packets
-  useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages, chatLoading]);
-  // Asynchronous Blob PDF Secure Downloader Implementation
-  const handleDownloadPdf = async (invoiceId, invoiceNumber) => {
-    try {
-      const res = await fetch(
-        `${data.API_BASE}/api/invoices/${invoiceId}/pdf`,
-        {
-          headers: { Authorization: `Bearer ${data.token}` },
-        },
-      );
-      if (!res.ok) throw new Error("Failed to download PDF stream.");
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `STATEMENT-${invoiceNumber}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("❌ PDF Download Error:", err.message);
-    }
-  };
-
-  // Auth Submit Bridge Interceptor
-  const handleAuthSubmitInternal = async (e) => {
+  // 🔐 SECURE STANDARD SAAS AUTHENTICATION AGGREGATOR LOOP
+  const handleAuthSubmit = async (e) => {
     e.preventDefault();
-    if (!data.authUsername || !data.authPassword) {
-      data.setAuthMessage({
+    if (!authUsername || !authPassword) {
+      setAuthMessage({
         text: "Credentials fields cannot be left blank.",
         isError: true,
       });
       return;
     }
-    data.setAuthMessage({ text: "", isError: false });
-    const endpointPath = data.isRegistering
-      ? `${data.API_BASE}/api/auth/register`
-      : `${data.API_BASE}/api/auth/login`;
+    setAuthSubmitting(true);
+    setAuthMessage({ text: "", isError: false });
+
+    const endpointPath = isRegistering
+      ? "/api/auth/register"
+      : "/api/auth/login";
 
     try {
-      const res = await fetch(endpointPath, {
+      const res = await fetch(`${data.API_BASE}${endpointPath}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username: data.authUsername,
-          password: data.authPassword,
+          username: authUsername,
+          password: authPassword,
         }),
       });
       const resData = await res.json();
-      if (!res.ok)
+      if (!res.ok) {
         throw new Error(
-          resData.error || "Authentication gate rejected request.",
+          resData.error || "Security authentication gate rejected request.",
         );
+      }
 
-      if (data.isRegistering) {
-        data.setAuthMessage({
+      if (isRegistering) {
+        setAuthMessage({
           text: "Account profile created successfully! Switching to login view...",
           isError: false,
         });
-        data.setAuthUsername("");
-        data.setAuthPassword("");
-        data.setIsRegistering(false);
+        setAuthUsername("");
+        setAuthPassword("");
+        setIsRegistering(false);
       } else {
         localStorage.setItem("lf_token", resData.token);
         localStorage.setItem("lf_user", JSON.stringify(resData.user));
         data.setToken(resData.token);
         data.setCurrentUser(resData.user);
-        data.setAuthUsername("");
-        data.setAuthPassword("");
+        setAuthUsername("");
+        setAuthPassword("");
       }
     } catch (err) {
-      data.setAuthMessage({ text: err.message, isError: true });
+      setAuthMessage({ text: err.message, isError: true });
+    } finally {
+      setAuthSubmitting(false);
     }
   };
 
-  // Standard Form Handlers
+  // 🚪 WORKSPACE CLEARANCE STATE DISMANTLER
+  const handleLogout = () => {
+    localStorage.removeItem("lf_token");
+    localStorage.removeItem("lf_user");
+    data.setToken("");
+    data.setCurrentUser(null);
+    data.setMetrics({
+      total_outstanding_cents: 0,
+      total_collected_cents: 0,
+      total_clients_count: 0,
+    });
+    data.setClientsList([]);
+    data.setInvoicesList([]);
+    data.setSearchTerm("");
+  };
+  // 📊 MANUAL FORM BILLING STATEMENT DISPATCH LOOP
+  // 📊 FIXED: SCHEMA-ALIGNED MANUAL FORM BILLING STATEMENT DISPATCH LOOP
+  const handleInvoiceSubmitInternal = async (e) => {
+    e.preventDefault();
+
+    // Defensive check to ensure data.items is an array block
+    const formLines = Array.isArray(data.items) ? data.items : [];
+
+    if (
+      !data.selectedClientId ||
+      !data.invoiceNumber ||
+      !data.dueDate ||
+      formLines.length === 0
+    ) {
+      alert(
+        "⚠️ Form validation error: All core billing parameters must be fully populated.",
+      );
+      return;
+    }
+
+    try {
+      const res = await fetch(`${data.API_BASE}/api/invoices`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${data.token}`,
+        },
+        body: JSON.stringify({
+          // Force numbers to be explicit integers matching your Postgres constraints
+          client_id: parseInt(data.selectedClientId, 10),
+          invoice_number: data.invoiceNumber.trim(),
+          due_date: data.dueDate,
+          // 🎯 FIXED: Map the frontend price dollars string directly into unit_amount_cents column
+          items: formLines.map((i) => ({
+            description: i.description || "Operational Consulting Services",
+            quantity: parseInt(i.quantity, 10) || 1,
+            unit_amount_cents: Math.round(parseFloat(i.price) * 100) || 0,
+          })),
+        }),
+      });
+
+      const resData = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          resData.error || "Database validation rejection exception.",
+        );
+      }
+
+      // Clear local entry state parameters smoothly upon a successful postgres row insert
+      data.setInvoiceNumber("");
+      data.setDueDate("");
+      data.setItems([{ description: "", quantity: 1, price: "" }]);
+
+      data.fetchMetrics();
+      data.fetchInvoicesList();
+      alert(
+        "✅ Invoice statement and itemized rows successfully committed to Postgres!",
+      );
+    } catch (err) {
+      console.error("❌ Manual Form Invoice Submit Failure:", err.message);
+      alert(`⚠️ Billing Rejection: ${err.message}`);
+    }
+  };
+
+  // 👥 MANUAL FORM CUSTOMER RECORD SUBMIT HANDLER
   const handleClientSubmitInternal = async (e) => {
     e.preventDefault();
-    if (!data.clientName || !data.clientEmail) return;
     try {
       const res = await fetch(`${data.API_BASE}/api/clients`, {
         method: "POST",
@@ -122,54 +183,11 @@ function App() {
           email: data.clientEmail,
         }),
       });
-      const resData = await res.json();
-      if (!res.ok) throw new Error(resData.error);
-      data.setClientMessage({
-        text: `Success: ${data.clientName} saved!`,
-        isError: false,
-      });
-      data.setClientName("");
-      data.setClientEmail("");
+      if (!res.ok) throw new Error("Entity insert failure.");
       data.fetchMetrics();
       data.fetchClientsList();
     } catch (err) {
-      data.setClientMessage({ text: err.message, isError: true });
-    }
-  };
-  const handleInvoiceSubmitInternal = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${data.API_BASE}/api/invoices`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${data.token}`,
-        },
-        body: JSON.stringify({
-          client_id: parseInt(data.selectedClientId, 10),
-          invoice_number: data.invoiceNumber,
-          due_date: data.dueDate,
-          items: data.items.map((i) => ({
-            description: i.description,
-            quantity: parseInt(i.quantity, 10),
-            price: parseFloat(i.price),
-          })),
-        }),
-      });
-      const resData = await res.json();
-      if (!res.ok) throw new Error(resData.error);
-      data.setInvoiceMessage({
-        text: `Success: Invoice Generated!`,
-        isError: false,
-      });
-      data.setSelectedClientId("");
-      data.setInvoiceNumber("");
-      data.setDueDate("");
-      data.setItems([{ description: "", quantity: 1, price: "" }]);
-      data.fetchMetrics();
-      data.fetchInvoicesList();
-    } catch (err) {
-      data.setInvoiceMessage({ text: err.message, isError: true });
+      console.error("❌ Manual Form Client Submit Failure:", err.message);
     }
   };
 
@@ -181,12 +199,10 @@ function App() {
     data.fetchMetrics();
     data.fetchInvoicesList();
   };
-
-  // 🤖 CONVERSATIONAL AI PIPELINE ROUTERS
+  // 💬 CHAT TIMELINE CORE DISPATCH ENGINES
   const handleSendChatMessage = async (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
-
     const userText = chatInput;
     setChatMessages((prev) => [
       ...prev,
@@ -194,7 +210,6 @@ function App() {
     ]);
     setChatInput("");
     setChatLoading(true);
-
     try {
       const res = await fetch(`${data.API_BASE}/api/chat`, {
         method: "POST",
@@ -205,9 +220,6 @@ function App() {
         body: JSON.stringify({ message: userText }),
       });
       const resData = await res.json();
-
-      if (!res.ok) throw new Error(resData.error || "AI engine timeout.");
-
       if (resData.type === "approval_required") {
         setChatMessages((prev) => [
           ...prev,
@@ -228,14 +240,18 @@ function App() {
     } catch (err) {
       setChatMessages((prev) => [
         ...prev,
-        { type: "text", sender: "ai", text: `⚠️ Error: ${err.message}` },
+        {
+          type: "text",
+          sender: "ai",
+          text: `Error connecting to core AI route.`,
+        },
       ]);
     } finally {
       setChatLoading(false);
     }
   };
 
-  // 🔓 THE FINAL ATOMIC APPROVAL HANDSHAKE EXECUTIONER
+  // 🛡️ HUMAN-IN-THE-LOOP SECURE TRANSACTION APPROVAL DISPATCHER
   const handleApproveAIAction = async (msgIndex, action, payload) => {
     try {
       const res = await fetch(`${data.API_BASE}/api/chat/confirm`, {
@@ -247,26 +263,21 @@ function App() {
         body: JSON.stringify({ action, data: payload }),
       });
       const resData = await res.json();
-
-      if (!res.ok) throw new Error(resData.error);
-
       setChatMessages((prev) =>
         prev.map((msg, idx) =>
           idx === msgIndex
             ? {
                 type: "text",
                 sender: "ai",
-                text: `✅ Action Confirmed: ${resData.message}`,
+                text: `Action Confirmed: ${resData.message}`,
               }
             : msg,
         ),
       );
-
       data.fetchMetrics();
-      data.fetchClientsList();
       data.fetchInvoicesList();
     } catch (err) {
-      alert(`Execution Failed: ${err.message}`);
+      alert(`❌ Transaction execution bottleneck: ${err.message}`);
     }
   };
 
@@ -274,129 +285,114 @@ function App() {
     data.invoicesList?.filter(
       (inv) =>
         inv.invoice_number
-          .toLowerCase()
+          ?.toLowerCase()
           .includes(data.searchTerm.toLowerCase()) ||
-        inv.client_name.toLowerCase().includes(data.searchTerm.toLowerCase()),
+        inv.client_name?.toLowerCase().includes(data.searchTerm.toLowerCase()),
     ) || [];
-  // Unauthenticated Gatekeeper Screen Overlay View (Apple Studio Adaptive Frame)
+  // 🔐 STAGE E: STANDARD SAAS SIGN-IN / SIGN-UP SCREEN OVERLAY
   if (!data.token) {
     return (
-      <div
-        className={`${isDarkMode ? "dark bg-[#09090b]" : "bg-[#f5f5f7]"} flex min-h-screen text-zinc-800 dark:text-zinc-100 antialiased font-sans tracking-tight items-center justify-center p-6 transition-colors duration-200`}
-      >
-        <div className="w-full max-w-sm rounded-2xl border bg-white dark:bg-[#1c1c1e] border-zinc-100 dark:border-zinc-800/50 p-6 space-y-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <span className="text-base font-black tracking-tight text-zinc-900 dark:text-white">
-                Ledger<span className="text-blue-500">Flow</span>
-              </span>
-              <p className="text-[9px] text-zinc-400 dark:text-zinc-600 font-mono uppercase tracking-widest">
-                Studio.v5
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-1.5 border border-zinc-100 dark:border-zinc-800 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 text-xs"
-            >
-              {isDarkMode ? "☀️" : "🌙"}
-            </button>
-          </div>
-
-          <div className="space-y-0.5">
-            <h2 className="text-xs font-black uppercase tracking-tight text-zinc-900 dark:text-white">
-              {data.isRegistering
-                ? "Create Platform Profile"
-                : "Identity Authorization Key"}
+      <div className="bg-[#0e0e11] text-zinc-100 flex min-h-screen items-center justify-center p-4 antialiased font-sans">
+        <div className="w-full max-w-md rounded-2xl bg-[#141419] border border-zinc-800/80 p-8 space-y-6 shadow-[0_20px_50px_rgba(0,0,0,0.5)] transition-all animate-fadeIn">
+          <div className="space-y-1">
+            <span className="text-[10px] font-mono tracking-widest text-blue-500 uppercase font-bold">
+              SECURE_WORKSPACE_GATEWAY
+            </span>
+            <h2 className="text-xl font-black uppercase text-white tracking-tight">
+              Ledger//<span className="text-blue-500">Flow</span>
             </h2>
-            <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
-              {data.isRegistering
-                ? "Provision private multi-tenant ledger accounts"
-                : "Access sandboxed business statements"}
+            <p className="text-zinc-500 text-[11px] font-medium font-sans">
+              {isRegistering
+                ? "Create your new business merchant account profile"
+                : "Sign in to access your accounting ledgers"}
             </p>
           </div>
 
           <form
-            onSubmit={handleAuthSubmitInternal}
-            className="space-y-4 text-xs"
+            onSubmit={handleAuthSubmit}
+            className="space-y-4 text-xs font-medium"
           >
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase">
-                Profile Username
+              <label className="text-[9px] font-bold text-zinc-400 uppercase font-mono tracking-wider">
+                Account Username ID
               </label>
               <input
                 type="text"
-                value={data.authUsername}
-                onChange={(e) => data.setAuthUsername(e.target.value)}
-                placeholder="e.g. abhi_operator"
-                className="w-full rounded-xl px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-800 dark:text-white placeholder-zinc-400 border border-transparent focus:outline-none"
+                value={authUsername}
+                onChange={(e) => setAuthUsername(e.target.value)}
+                placeholder="operator_id"
+                className="w-full rounded-xl px-4 py-3 bg-[#0e0e11] text-white border border-zinc-800 focus:border-blue-500 outline-none transition-colors font-medium animate-fadeIn"
+                required
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase">
-                Account Password
+              <label className="text-[9px] font-bold text-zinc-400 uppercase font-mono tracking-wider">
+                Security Access Password
               </label>
               <input
                 type="password"
-                value={data.authPassword}
-                onChange={(e) => data.setAuthPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full rounded-xl px-3.5 py-2.5 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-800 dark:text-white placeholder-zinc-400 border border-transparent focus:outline-none"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full rounded-xl px-4 py-3 bg-[#0e0e11] text-white border border-zinc-800 focus:border-blue-500 outline-none transition-colors font-mono"
+                required
               />
             </div>
 
-            {data.authMessage.text && (
+            {authMessage.text && (
               <p
-                className={`text-[11px] font-medium p-2.5 rounded-xl border ${data.authMessage.isError ? "bg-red-500/5 border-red-500/10 text-red-400" : "bg-emerald-500/5 border-emerald-500/10 text-emerald-400"}`}
+                className={`font-mono text-[10px] uppercase font-bold tracking-wide border p-3 rounded-xl animate-fadeIn
+                ${authMessage.isError ? "border-red-500/20 bg-red-500/5 text-red-400" : "border-emerald-500/20 bg-emerald-500/5 text-emerald-400"}`}
               >
-                {data.authMessage.text}
+                {authMessage.isError ? "❌ ERROR: " : "✅ SUCCESS: "}
+                {authMessage.text}
               </p>
             )}
 
             <button
               type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-xl transition-all shadow-sm"
+              disabled={authSubmitting}
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all shadow-[0_4px_20px_rgba(37,99,235,0.25)] uppercase tracking-wider text-[11px] font-mono"
             >
-              {data.isRegistering
-                ? "Run Account Script"
-                : "Initialize Console Dashboard"}
+              {authSubmitting
+                ? "Processing..."
+                : isRegistering
+                  ? "Register Account"
+                  : "Sign In to System"}
             </button>
           </form>
 
-          <div className="text-center">
+          {/* Form State Toggle Interface */}
+          <div className="text-center pt-2 border-t border-zinc-800/60">
             <button
               type="button"
-              onClick={() => data.setIsRegistering(!data.isRegistering)}
-              className="text-[11px] text-zinc-400 dark:text-zinc-500 hover:underline"
+              onClick={() => {
+                setIsRegistering(!isRegistering);
+                setAuthMessage({ text: "", isError: false });
+              }}
+              className="text-[10px] font-mono text-zinc-500 hover:text-blue-400 font-bold uppercase transition-colors"
             >
-              {data.isRegistering
-                ? "Back to Login Panel"
-                : "Need an account? Register profile"}
+              {isRegistering
+                ? "[ Already have an account? Sign In ]"
+                : "[ Need a workspace? Create Account ]"}
             </button>
           </div>
         </div>
       </div>
     );
   }
-
-  // Authenticated Production Dashboard Screen View (Laid-Back Cupertino Edition)
   return (
-    <div
-      className={`${isDarkMode ? "dark bg-[#09090b] text-zinc-100" : "bg-[#f5f5f7] text-zinc-800"} flex flex-col h-screen font-sans tracking-tight antialiased transition-colors duration-200 overflow-hidden`}
-    >
-      {/* 💻 PLATFORM HEADER BAR A: FLOATING HORIZONTAL ACTION NAVBAR (Top Pinned) */}
-      <header className="w-full h-14 flex items-center justify-between px-6 bg-white/80 dark:bg-[#1c1c1e]/60 backdrop-blur-xl border-b border-zinc-100 dark:border-zinc-800/50 z-20 shadow-sm">
-        {/* Logo and Core Identity Group */}
-        <div className="flex items-center space-x-8">
-          <div className="space-y-0.5">
-            <span className="text-base font-black text-zinc-900 dark:text-white tracking-tight">
-              Ledger<span className="text-blue-500">Flow</span>
-            </span>
-          </div>
+    <div className="bg-[#0e0e11] text-zinc-100 flex flex-col h-screen font-sans tracking-tight antialiased overflow-hidden select-none">
+      {/* 🧭 CHROMATIC FLOATING RESPONSIVE HEADER BAR */}
+      <header className="w-full h-16 flex items-center justify-between px-4 sm:px-6 bg-[#141419]/90 border-b border-b-zinc-800/60 z-30 shadow-xl backdrop-blur-md">
+        <div className="flex items-center space-x-6 sm:space-x-8">
+          <span className="text-xs font-black text-white tracking-tight uppercase font-mono border border-zinc-800 px-2.5 py-1.5 rounded-lg bg-[#0e0e11]">
+            L//<span className="text-blue-500">F</span>
+          </span>
 
-          {/* ⚡ THE 5-TAB HORIZONTAL EXTENDED ROUTING MATRIX */}
-          <nav className="flex items-center space-x-1">
+          {/* 💻 DESKTOP HORIZONTAL CONTROL PATHS */}
+          <nav className="hidden md:flex items-center space-x-1">
             {[
               { id: "dashboard", label: "Overview" },
               { id: "billing", label: "Invoices" },
@@ -408,14 +404,12 @@ function App() {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`
-                  px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-100
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-150 font-sans
                   ${
                     activeTab === tab.id
-                      ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950 shadow-sm"
-                      : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
-                  }
-                `}
+                      ? "bg-blue-600 text-white shadow-[0_4px_15px_rgba(37,99,235,0.3)]"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
               >
                 {tab.label}
               </button>
@@ -423,368 +417,164 @@ function App() {
           </nav>
         </div>
 
-        {/* Global Control Group Settings */}
-        <div className="flex items-center space-x-4 text-xs">
-          {/* Light/Dark Toggle Matrix Card */}
+        {/* 📱 MINI-TAB SCROLL STRIP FOR MOBILE CONSOLES */}
+        <div className="flex md:hidden items-center space-x-1 bg-[#1c1c24] p-1 rounded-xl border border-zinc-800 overflow-x-auto max-w-[140px] sm:max-w-xs scrollbar-none">
+          {[
+            { id: "dashboard", l: "Ovw" },
+            { id: "billing", l: "Inv" },
+            { id: "customers", l: "Cli" },
+            { id: "automations", l: "Auto" },
+            { id: "settings", l: "Set" },
+          ].map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setActiveTab(t.id)}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase transition-colors shrink-0
+                ${activeTab === t.id ? "bg-blue-600 text-white" : "text-zinc-500"}`}
+            >
+              {t.l}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center space-x-3 text-xs">
           <button
             type="button"
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className="p-1.5 border border-zinc-100 dark:border-zinc-800 rounded-lg bg-zinc-50 dark:bg-zinc-900/40 text-slate-500 dark:text-zinc-400 hover:text-blue-500 transition-colors shadow-sm"
+            onClick={() => {
+              setIsConsoleVisible(!isConsoleVisible);
+              setIsMobileChatOpen(!isMobileChatOpen);
+            }}
+            className="p-2 border border-zinc-800 rounded-xl bg-[#1c1c24] text-blue-500 font-bold text-[10px] uppercase font-mono"
           >
-            {isDarkMode ? "☀️" : "🌙"}
+            {isConsoleVisible || isMobileChatOpen
+              ? "Hide AI Terminal"
+              : "Show AI Terminal"}
           </button>
-
-          {/* User Logged-In Profile Indicator Badge */}
-          <div className="flex items-center space-x-2 border-l border-zinc-200 dark:border-zinc-800 pl-4">
-            <div className="w-5 h-5 rounded-full bg-blue-600/10 flex items-center justify-center font-mono font-bold text-blue-500 text-[10px]">
-              {data.currentUser?.username?.slice(0, 2).toUpperCase()}
-            </div>
-            <span className="font-medium text-zinc-500 dark:text-zinc-400 hidden sm:inline">
-              {data.currentUser?.username}
-            </span>
-            <button
-              type="button"
-              onClick={data.handleLogout}
-              className="text-[10px] border border-zinc-200 dark:border-zinc-800 hover:border-red-500/20 text-zinc-400 hover:text-red-400 px-2 py-0.5 rounded transition-all"
-            >
-              Sign Out
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="text-[10px] border border-zinc-800 text-zinc-500 hover:text-red-400 font-mono font-bold px-2.5 py-1.5 rounded-lg bg-[#1c1c24] transition-colors"
+          >
+            LOGOUT
+          </button>
         </div>
       </header>
 
-      {/* LOWER SPLIT WRAPPER HOOD CONTAINER */}
-      <div className="flex flex-1 w-full overflow-hidden h-[calc(100vh-3.5rem)]">
-        {/* 🛠️ PANEL B: THE PRIMARY WORKSPACE CANVAS CONTAINER (70% Width) */}
-        <div className="w-[70%] h-full flex flex-col p-6 overflow-y-auto space-y-6">
-          {/* Active Router Tab Views */}
+      {/* LOWER DOUBLE CHANNEL VIEWPORT CANVAS */}
+      <div className="flex flex-1 w-full overflow-hidden relative h-[calc(100vh-4rem)]">
+        {/* RESPONSIVE PRIMARY VIEWPORT DISPLAY PORT */}
+        <div
+          className={`h-full flex flex-col p-4 sm:p-6 overflow-y-auto space-y-6 z-10 transition-all duration-300
+          ${isConsoleVisible ? "w-full md:w-[70%]" : "w-full"}`}
+        >
           {activeTab === "dashboard" && (
-            <div className="space-y-6 animate-fadeIn">
-              <MetricCards metrics={data.metrics} />
-              <CashflowChart data={data.metrics?.chartData} />
-            </div>
+            <DashboardView
+              metrics={data.metrics}
+              invoicesList={data.invoicesList}
+            />
           )}
-
           {activeTab === "billing" && (
-            <div className="space-y-6 animate-fadeIn">
-              <InvoiceForm
-                clientsList={data.clientsList}
-                selectedClientId={data.selectedClientId}
-                setSelectedClientId={data.setSelectedClientId}
-                invoiceNumber={data.invoiceNumber}
-                setInvoiceNumber={data.setInvoiceNumber}
-                dueDate={data.dueDate}
-                setDueDate={data.setDueDate}
-                items={data.items}
-                setItems={data.setItems}
-                invoiceMessage={data.invoiceMessage}
-                handleInvoiceSubmit={handleInvoiceSubmitInternal}
-              />
-
-              {/* Cupertino Statement Ledger Stream View */}
-              <div className="p-5 rounded-2xl bg-white dark:bg-[#1c1c1e] border border-zinc-100 dark:border-zinc-800/50 space-y-4 shadow-sm">
-                <div className="flex items-center justify-between border-b border-zinc-50 dark:border-zinc-800/30 pb-2">
-                  <h3 className="text-xs font-bold tracking-tight text-zinc-900 dark:text-white uppercase font-sans">
-                    Invoices Ledger History
-                  </h3>
-                  <input
-                    type="text"
-                    placeholder="Search parameters..."
-                    value={data.searchTerm}
-                    onChange={(e) => data.setSearchTerm(e.target.value)}
-                    className="text-xs border border-zinc-100 dark:border-zinc-800 rounded-lg px-2.5 py-1 bg-zinc-50 dark:bg-zinc-900 text-zinc-900 dark:text-white outline-none"
-                  />
-                </div>
-
-                <div className="space-y-2 text-xs">
-                  {filteredInvoices.map((inv) => (
-                    <div
-                      key={inv.id}
-                      className="flex items-center justify-between p-3 rounded-xl border border-zinc-50 dark:border-zinc-800/10 bg-zinc-50/50 dark:bg-zinc-900/30 hover:bg-zinc-100/40 dark:hover:bg-zinc-900/50 transition-all font-sans"
-                    >
-                      <div className="space-y-0.5">
-                        <p className="font-mono font-bold text-zinc-900 dark:text-white">
-                          {inv.invoice_number}
-                        </p>
-                        <p className="text-zinc-400 dark:text-zinc-500 text-[11px] font-medium">
-                          {inv.client_name} • Due:{" "}
-                          {inv.due_date
-                            ? new Date(inv.due_date).toLocaleDateString()
-                            : "N/A"}
-                        </p>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <p className="font-bold text-zinc-900 dark:text-white">
-                          ${(inv.amount_cents / 100).toFixed(2)}
-                        </p>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${inv.status === "paid" ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"}`}
-                        >
-                          {inv.status}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleDownloadPdf(inv.id, inv.invoice_number)
-                          }
-                          className="bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 px-2.5 py-1 rounded-lg font-bold transition-all shadow-sm"
-                        >
-                          PDF
-                        </button>
-                        {inv.status !== "paid" && (
-                          <button
-                            type="button"
-                            onClick={() => handleSettleInternal(inv.id)}
-                            className="bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded-lg font-bold transition-all shadow-sm"
-                          >
-                            Settle
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <InvoicesView
+              data={data}
+              filteredInvoices={filteredInvoices}
+              handleInvoiceSubmitInternal={handleInvoiceSubmitInternal}
+              handleSettleInternal={handleSettleInternal}
+            />
           )}
-
           {activeTab === "customers" && (
-            <div className="space-y-6 animate-fadeIn">
-              <ClientForm
-                clientName={data.clientName}
-                setClientName={data.setClientName}
-                clientEmail={data.clientEmail}
-                setClientEmail={data.setClientEmail}
-                clientMessage={data.clientMessage}
-                handleClientSubmit={handleClientSubmitInternal}
-              />
-
-              {/* Client Lookup Directory */}
-              <div className="p-5 rounded-2xl bg-white dark:bg-[#1c1c1e] border border-zinc-100 dark:border-zinc-800/50 space-y-3 shadow-sm">
-                <h3 className="text-xs font-bold tracking-tight text-zinc-900 dark:text-white uppercase font-sans border-b border-zinc-50 dark:border-zinc-800/30 pb-2">
-                  Registered Accounts Directory
-                </h3>
-                <div className="space-y-1.5 text-xs overflow-y-auto max-h-[320px]">
-                  {data.clientsList.map((client) => (
-                    <div
-                      key={client.id}
-                      className="flex items-center justify-between p-3 rounded-xl bg-zinc-50/50 dark:bg-zinc-900/30 border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800/40 transition-colors"
-                    >
-                      <div>
-                        <p className="font-bold text-zinc-900 dark:text-white">
-                          {client.name}
-                        </p>
-                        <p className="text-[11px] text-zinc-400 dark:text-zinc-500 font-mono font-medium">
-                          {client.email}
-                        </p>
-                      </div>
-                      <span className="text-[10px] text-zinc-400 dark:text-zinc-500 px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-900 font-mono">
-                        ID: #{client.id}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <ClientsView
+              data={data}
+              handleClientSubmitInternal={handleClientSubmitInternal}
+            />
           )}
-          {/* 🤖 NEW EXTENDED DOMAIN TAB 4: AUTOMATIONS SETTINGS */}
+
+          {/* AUTOMATIONS SUB-VIEW BLOCKS */}
           {activeTab === "automations" && (
-            <div className="p-6 rounded-2xl bg-white dark:bg-[#1c1c1e] border border-zinc-100 dark:border-zinc-800/50 space-y-5 shadow-sm animate-fadeIn">
-              <div className="space-y-0.5">
-                <h3 className="text-xs font-black tracking-tight text-zinc-900 dark:text-white uppercase font-sans">
-                  Autonomous AI Collection Parameters
-                </h3>
-                <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                  Tune outreach tone filters for background ledger recovery
-                  pipelines
-                </p>
-              </div>
-              <div className="grid grid-cols-3 gap-4 pt-2">
+            <div className="p-6 rounded-2xl bg-[#141419] border border-zinc-800/80 space-y-4 shadow-xl animate-fadeIn">
+              <h3 className="text-xs font-black tracking-tight text-white uppercase font-sans">
+                Autonomous AI Tone Settings
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                 {[
-                  "Polite & Friendly",
-                  "Firm & Professional",
-                  "Enterprise Strict",
+                  "Friendly Reminder",
+                  "Firm / Corporate",
+                  "Strict Collections",
                 ].map((tone, i) => (
-                  <button
+                  <div
                     key={i}
-                    type="button"
-                    className={`p-4 rounded-xl border text-center font-bold text-xs transition-colors ${i === 1 ? "border-blue-500 bg-blue-500/5 text-blue-500" : "border-zinc-100 dark:border-zinc-800/60 text-zinc-400"}`}
+                    className={`p-4 rounded-xl border text-center font-bold text-xs ${i === 1 ? "border-blue-500 bg-blue-500/10 text-blue-400" : "border-zinc-800 text-zinc-500"}`}
                   >
                     {tone}
-                  </button>
+                  </div>
                 ))}
               </div>
-              <p className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-relaxed pt-2">
-                *When enabled, your background microservices run autonomously at
-                midnight, scanning past-due entries to execute targeted
-                Nodemailer recovery streams with no human intervention.
-              </p>
             </div>
           )}
 
-          {/* ⚙️ NEW EXTENDED DOMAIN TAB 5: PLATFORM SETTINGS */}
+          {/* SETTINGS SUB-VIEW BLOCKS */}
           {activeTab === "settings" && (
-            <div className="p-6 rounded-2xl bg-white dark:bg-[#1c1c1e] border border-zinc-100 dark:border-zinc-800/50 space-y-5 shadow-sm animate-fadeIn">
-              <div className="space-y-0.5">
-                <h3 className="text-xs font-black tracking-tight text-zinc-900 dark:text-white uppercase font-sans">
-                  Company Core Infrastructure Configuration
-                </h3>
-                <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                  Manage payment distributions channels and user workspace
-                  branding models
-                </p>
-              </div>
-              <div className="p-4 rounded-xl border border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/50 dark:bg-zinc-900/30 flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <p className="text-xs font-bold text-zinc-900 dark:text-white">
-                    Stripe Connect Bank Onboarding Link
+            <div className="p-6 rounded-2xl bg-[#141419] border border-zinc-800/80 space-y-4 shadow-xl animate-fadeIn">
+              <h3 className="text-xs font-black tracking-tight text-white uppercase font-sans">
+                Infrastructure Core
+              </h3>
+              <div className="p-4 rounded-xl border border-zinc-800/60 bg-[#1c1c24] flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-white">
+                    Stripe Checkout Integration Gateway
                   </p>
-                  <p className="text-[11px] text-zinc-400 dark:text-zinc-500 font-medium">
-                    Link multi-tenant business accounts to process real-world
-                    customer credit card checkouts
+                  <p className="text-[11px] text-zinc-500">
+                    Route payments safely into multi-tenant accounts
                   </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() =>
-                    alert(
-                      "Redirecting safely to sandbox Stripe Connect gateway...",
-                    )
-                  }
-                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-3 py-1.5 rounded-xl transition-all shadow-sm"
+                  className="bg-blue-600 text-white font-mono font-bold text-[10px] uppercase px-4 py-2 rounded-xl"
                 >
-                  Connect Account
+                  Connect Stripe
                 </button>
               </div>
             </div>
           )}
         </div>
-        <AIConsole
-          chatInput={chatInput}
-          setChatInput={setChatInput}
-          chatMessages={chatMessages} // Passes down your automatic card seed arrays
-          setChatMessages={setChatMessages}
-          chatLoading={chatLoading}
-          chatBottomRef={chatBottomRef}
-          handleSendChatMessage={handleSendChatMessage}
-          handleApproveAIAction={handleApproveAIAction}
-          setActiveTab={setActiveTab} // Enables your shortcut macro keys to switch pages
-        />
-        {/* 🤖 PANEL C: PREMIUM CONVERSATIONAL AGENT CONSOLE TERMINAL (30% Width) 
-        <div className="w-[30%] h-full flex flex-col bg-white/40 dark:bg-zinc-950/10 border-l border-zinc-100 dark:border-zinc-900/60 shadow-inner">
-          <div className="p-4 border-b border-zinc-100 dark:border-zinc-800/50 bg-white/80 dark:bg-[#1c1c1e]/60 flex items-center space-x-2">
-            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.4)]"></div>
-            <h2 className="text-xs font-black tracking-tight text-zinc-900 dark:text-white uppercase font-sans">
-              LedgerFlow AI Core
-            </h2>
-          </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs font-sans">
-            {chatMessages.map((msg, index) => (
-              <div
-                key={index}
-                className={`flex flex-col space-y-0.5 ${msg.sender === "user" ? "items-end" : "items-start"}`}
-              >
-                <span className="text-[9px] text-zinc-400 dark:text-zinc-600 font-mono tracking-wider uppercase font-bold">
-                  {msg.sender === "user" ? "You" : "LedgerFlow AI"}
-                </span>
+        {/* DYNAMIC COLLAPSIBLE CONSOLE DRAWER FRAME */}
+        {/* 🟢 FIXED: DYNAMIC CHROMATIC RESPONSIVE CONSOLE DRAWER FRAME */}
+        {/* 📱 🚀 UNBREAKABLE TOUCH-SAFE RESPONSIVE CONSOLE DRAWER FRAME */}
+        <div
+          className={`
+          /* On mobile, it acts as an absolute layer over the view. On Mac, it snaps back inside the desktop flex row. */
+          fixed md:relative top-0 bottom-0 right-0 z-50 w-[280px] sm:w-[320px] md:w-[30%] h-full bg-[#141419] transition-transform duration-300 ease-out transform
+          /* 🎯 FORCE LAYOUT DEPTH: If isConsoleVisible is false on desktop, hide it completely. On mobile, look entirely at isMobileChatOpen. */
+          ${isMobileChatOpen ? "translate-x-0" : "translate-x-full md:translate-x-0"}
+          ${!isConsoleVisible ? "md:hidden" : ""}
+          border-l border-zinc-800/80 shadow-[-10px_0_30px_rgba(0,0,0,0.5)] md:shadow-none
+        `}
+        >
+          <AIConsole
+            chatInput={chatInput}
+            setChatInput={setChatInput}
+            chatMessages={chatMessages}
+            setChatMessages={setChatMessages}
+            chatLoading={chatLoading}
+            chatBottomRef={chatBottomRef}
+            handleSendChatMessage={handleSendChatMessage}
+            handleApproveAIAction={handleApproveAIAction}
+            setActiveTab={setActiveTab}
+            isMobileChatOpen={isMobileChatOpen}
+            setIsMobileChatOpen={setIsMobileChatOpen}
+            isConsoleVisible={isConsoleVisible}
+            setIsConsoleVisible={setIsConsoleVisible}
+          />
+        </div>
 
-                {msg.type === "text" && (
-                  <div
-                    className={`p-3 max-w-[85%] rounded-2xl border leading-relaxed shadow-sm font-medium ${msg.sender === "user" ? "bg-blue-600 border-blue-500 text-white rounded-br-none" : "bg-white dark:bg-[#1c1c1e] border-zinc-100 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-bl-none"}`}
-                  >
-                    {msg.text}
-                  </div>
-                )}
-
-                {msg.type === "approval_box" && (
-                  <div className="p-4 w-full rounded-2xl border border-blue-200 dark:border-blue-900/30 bg-blue-50/30 dark:bg-blue-950/5 text-zinc-700 dark:text-zinc-300 space-y-3 shadow-sm rounded-bl-none font-medium">
-                    <p className="leading-relaxed">{msg.text}</p>
-                    <div className="flex items-center space-x-2 pt-1 font-sans">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleApproveAIAction(index, msg.action, msg.data)
-                        }
-                        className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold py-1.5 rounded-xl transition-all shadow-sm"
-                      >
-                        Confirm Approval
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setChatMessages((prev) =>
-                            prev.map((m, idx) =>
-                              idx === index
-                                ? {
-                                    type: "text",
-                                    sender: "ai",
-                                    text: "❌ Action canceled by operator.",
-                                  }
-                                : m,
-                            ),
-                          )
-                        }
-                        className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-400 dark:text-zinc-500 text-[11px] font-bold px-3 py-1.5 rounded-xl transition-all"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {chatLoading && (
-              <div className="flex flex-col space-y-0.5 items-start">
-                <span className="text-[9px] text-zinc-400 dark:text-zinc-600 font-mono font-bold uppercase tracking-wider">
-                  LedgerFlow AI
-                </span>
-                <div className="p-3 bg-white dark:bg-[#1c1c1e] border border-zinc-100 dark:border-zinc-800 rounded-2xl rounded-bl-none text-zinc-400 dark:text-zinc-500 font-medium text-[11px] flex items-center space-x-1 shadow-sm">
-                  <span
-                    className="w-1 h-1 bg-blue-500 rounded-full animate-bounce"
-                    style={{ animationDelay: "0ms" }}
-                  ></span>
-                  <span
-                    className="w-1 h-1 bg-blue-500 rounded-full animate-bounce"
-                    style={{ animationDelay: "150ms" }}
-                  ></span>
-                  <span
-                    className="w-1 h-1 bg-blue-500 rounded-full animate-bounce"
-                    style={{ animationDelay: "300ms" }}
-                  ></span>
-                  <span className="pl-1">Thinking...</span>
-                </div>
-              </div>
-            )}
-            <div ref={chatBottomRef}></div>
-          </div>
-
-          <form
-            onSubmit={handleSendChatMessage}
-            className="p-4 border-t border-zinc-100 dark:border-zinc-900/60 bg-white/80 dark:bg-[#1c1c1e]/60 flex items-center space-x-2"
-          >
-            <input
-              type="text"
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              disabled={chatLoading}
-              placeholder={
-                chatLoading
-                  ? "Analyzing transaction matrices..."
-                  : "Ask your financial assistant anything..."
-              }
-              className="flex-1 text-xs border border-zinc-100 dark:border-zinc-900 rounded-xl px-3 py-2.5 bg-slate-50 dark:bg-zinc-900/50 text-zinc-800 dark:text-white placeholder-zinc-400 focus:outline-none focus:border-blue-600 disabled:opacity-50 font-medium"
-            />
-            <button
-              type="submit"
-              disabled={chatLoading || !chatInput.trim()}
-              className="bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-100 dark:disabled:bg-zinc-900 text-white disabled:text-zinc-400 px-4 py-2.5 rounded-xl font-bold text-xs transition-all shadow-sm"
-            >
-              Send
-            </button>
-          </form>
-        </div> */}
+        {/* 🌫️ MOBILE BACKDROP BLUR SHIELD: Closes the drawer if you tap outside the AI box */}
+        {isMobileChatOpen && (
+          <div
+            onClick={() => setIsMobileChatOpen(false)}
+            className="md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-opacity duration-300"
+          />
+        )}
       </div>
     </div>
   );

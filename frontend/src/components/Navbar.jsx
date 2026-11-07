@@ -21,7 +21,7 @@ export function Navbar({
   return (
     <header className="w-full h-14 flex items-center justify-between px-6 bg-white/75 dark:bg-[#1c1c1e]/60 backdrop-blur-xl border-b border-zinc-100 dark:border-zinc-800/40 z-20 transition-all duration-200">
       {/* Brand & Extended Tabs Group */}
-      <div className="flex items-center space-x-8">
+      <div className="flex items-center  space-x-8">
         <span className="text-base font-black text-zinc-900 dark:text-white tracking-tight font-sans">
           Ledger<span className="text-blue-500">Flow</span>
         </span>

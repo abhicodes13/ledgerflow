@@ -42,9 +42,11 @@ export function useLedgerFlowData() {
     { description: "", quantity: 1, price: "" },
   ]);
 
+  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000";
+
   const fetchMetrics = () => {
     if (!token) return;
-    fetch("http://54.196.141.74:3000/api/analytics/overview", {
+    fetch(`${API_BASE}/api/analytics/overview`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())
@@ -57,7 +59,7 @@ export function useLedgerFlowData() {
 
   const fetchClientsList = () => {
     if (!token) return;
-    fetch("http://54.196.141.74:3000/api/clients", {
+    fetch(`${API_BASE}/api/clients`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())
@@ -69,7 +71,7 @@ export function useLedgerFlowData() {
 
   const fetchInvoicesList = () => {
     if (!token) return;
-    fetch("http://54.196.141.74:3000/api/invoices", {
+    fetch(`${API_BASE}/api/invoices`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())
@@ -144,5 +146,6 @@ export function useLedgerFlowData() {
     fetchClientsList,
     fetchInvoicesList,
     handleLogout,
+    API_BASE,
   };
 }

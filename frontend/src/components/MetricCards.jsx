@@ -1,51 +1,39 @@
 import React from "react";
 
-export function MetricCards({ loading, metrics }) {
+export function MetricCards({ metrics }) {
   const formatCurrency = (cents) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
-    }).format(cents / 100);
+      minimumFractionDigits: 2,
+    }).format((cents || 0) / 100);
   };
 
+  const widgets = [
+    {
+      label: "Outstanding Balance",
+      value: formatCurrency(metrics?.total_outstanding_cents),
+    },
+    {
+      label: "Capital Collected",
+      value: formatCurrency(metrics?.total_collected_cents),
+    },
+    { label: "Active Registries", value: metrics?.total_clients_count || 0 },
+  ];
+
   return (
-    <div className="grid gap-6 sm:grid-cols-3">
-      <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
-        <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-          <span>Accounts Receivable</span>
-          <span className="text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded text-[9px]">
-            ⏳ Pending
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full p-7  font-sans">
+      {widgets.map((w, i) => (
+        <div
+          key={i}
+          className="p-10 rounded-xl border bg-white text-zinc-950 border-zinc-200 dark:bg-zinc-900 dark:text-zinc-50 dark:border-zinc-800 shadow-sm transition-colors duration-150"
+        >
+          <span className="text-[10px] tracking-widest font-bold uppercase text-zinc-400 dark:text-zinc-500 block mb-1 font-mono">
+            {w.label}
           </span>
+          <p className="text-2xl font-black tracking-tight">{w.value}</p>
         </div>
-        <h3 className="mt-4 text-2xl font-bold font-mono text-white">
-          {loading ? "..." : formatCurrency(metrics.total_outstanding_cents)}
-        </h3>
-        <div className="absolute top-0 right-0 h-[2px] w-0 bg-amber-500 group-hover:w-full transition-all duration-300"></div>
-      </div>
-      <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
-        <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-          <span>Revenue Collected</span>
-          <span className="text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded text-[9px]">
-            💰 Settled
-          </span>
-        </div>
-        <h3 className="mt-4 text-2xl font-bold font-mono text-emerald-400">
-          {loading ? "..." : formatCurrency(metrics.total_collected_cents)}
-        </h3>
-        <div className="absolute top-0 right-0 h-[2px] w-0 bg-emerald-500 group-hover:w-full transition-all duration-300"></div>
-      </div>
-      <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 relative overflow-hidden group">
-        <div className="flex items-center justify-between text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-          <span>Active Clients</span>
-          <span className="text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded text-[9px]">
-            👥 Profiles
-          </span>
-        </div>
-        <h3 className="mt-4 text-2xl font-bold font-mono text-white">
-          {loading ? "..." : metrics.total_clients_count}
-        </h3>
-        <div className="absolute top-0 right-0 h-[2px] w-0 bg-blue-500 group-hover:w-full transition-all duration-300"></div>
-      </div>
+      ))}
     </div>
   );
 }

@@ -350,6 +350,7 @@ function App() {
           filteredInvoices={filteredInvoices}
           handleInvoiceSubmitInternal={handleInvoiceSubmitInternal}
           handleSettleInternal={handleSettleInternal}
+          onNavigate={setActiveTab}
         />
       )}
       {activeTab === "customers" && (

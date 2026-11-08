@@ -7,9 +7,9 @@ const control =
   "transition-colors focus:border-accent focus:outline-none focus-visible:outline-none " +
   "focus:ring-2 focus:ring-accent/30 disabled:opacity-50";
 
-function Field({ id, label, hint, error, children }) {
+function Field({ id, label, hint, error, className, children }) {
   return (
-    <div className="space-y-1.5">
+    <div className={cn("space-y-1.5", className)}>
       {label && (
         <label htmlFor={id} className="block text-xs font-medium text-fg-muted">
           {label}
@@ -25,10 +25,23 @@ function Field({ id, label, hint, error, children }) {
   );
 }
 
-export function Input({ label, hint, error, className, ...props }) {
+export function Input({
+  label,
+  hint,
+  error,
+  className,
+  wrapperClassName,
+  ...props
+}) {
   const id = useId();
   return (
-    <Field id={id} label={label} hint={hint} error={error}>
+    <Field
+      id={id}
+      label={label}
+      hint={hint}
+      error={error}
+      className={wrapperClassName}
+    >
       <input
         id={id}
         aria-invalid={!!error}
@@ -44,10 +57,24 @@ export function Input({ label, hint, error, className, ...props }) {
   );
 }
 
-export function Select({ label, hint, error, className, children, ...props }) {
+export function Select({
+  label,
+  hint,
+  error,
+  className,
+  wrapperClassName,
+  children,
+  ...props
+}) {
   const id = useId();
   return (
-    <Field id={id} label={label} hint={hint} error={error}>
+    <Field
+      id={id}
+      label={label}
+      hint={hint}
+      error={error}
+      className={wrapperClassName}
+    >
       <div className="relative">
         <select
           id={id}

@@ -2,7 +2,7 @@ import { LogOut, Sparkles } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { Button } from "../ui";
 import { Logo } from "./Logo";
-import { Sidebar } from "./Sidebar";
+import { Sidebar } from "./SideBar";
 import { BottomNav } from "./BottomNav";
 import { ThemeCycle } from "./ThemeToggle";
 

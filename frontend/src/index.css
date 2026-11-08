@@ -139,3 +139,117 @@
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+
+/* ───────── Landing page motion ───────── */
+@keyframes aurora-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(10vw, 8vh, 0) scale(1.2);
+  }
+}
+@keyframes aurora-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1.1);
+  }
+  50% {
+    transform: translate3d(-12vw, 10vh, 0) scale(0.9);
+  }
+}
+@keyframes aurora-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(8vw, -10vh, 0) scale(1.15);
+  }
+}
+@keyframes gradient-pan {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 100% 50%;
+  }
+}
+@keyframes float-y {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.aurora-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.5;
+  will-change: transform;
+}
+.dark .aurora-blob {
+  opacity: 0.3;
+}
+.aurora-a {
+  background: oklch(0.72 0.17 277);
+  animation: aurora-a 22s ease-in-out infinite;
+}
+.aurora-b {
+  background: oklch(0.75 0.17 320);
+  animation: aurora-b 28s ease-in-out infinite;
+}
+.aurora-c {
+  background: oklch(0.78 0.13 220);
+  animation: aurora-c 25s ease-in-out infinite;
+}
+
+.gradient-text {
+  background-image: linear-gradient(
+    90deg,
+    var(--accent),
+    oklch(0.65 0.22 320),
+    oklch(0.68 0.16 220),
+    var(--accent)
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-pan 5s ease-in-out infinite alternate;
+}
+
+.float-y {
+  animation: float-y 7s ease-in-out infinite;
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition:
+    opacity 0.7s ease-out,
+    transform 0.7s ease-out;
+  transition-delay: var(--d, 0ms);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-blob,
+  .gradient-text,
+  .float-y {
+    animation: none !important;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

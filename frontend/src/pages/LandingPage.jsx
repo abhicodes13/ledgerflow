@@ -17,6 +17,7 @@ import {
 import { Logo } from "../components/layout/Logo";
 import { ThemeToggle } from "../components/layout/ThemeToggle";
 import { Badge } from "../components/ui";
+import { Aurora, Reveal, AnimatedPreview } from "../components/landing/Effects";
 import { cn } from "../lib/cn";
 
 /* ───────── Edit your plan here ───────── */
@@ -129,7 +130,7 @@ const btnSecondary = `${btn} border border-border-strong bg-surface text-fg hove
 
 function SectionHeading({ eyebrow, title, text }) {
   return (
-    <div className="mx-auto max-w-2xl text-center">
+    <Reveal className="mx-auto max-w-2xl text-center">
       {eyebrow && (
         <p className="text-sm font-semibold text-accent">{eyebrow}</p>
       )}
@@ -137,72 +138,7 @@ function SectionHeading({ eyebrow, title, text }) {
         {title}
       </h2>
       {text && <p className="mt-4 text-fg-muted">{text}</p>}
-    </div>
-  );
-}
-
-/* A small illustrative preview of the product (sample data, built with CSS) */
-function ProductPreview() {
-  const rows = [
-    {
-      n: "INV-014",
-      c: "Northwind Studio",
-      a: "$2,400.00",
-      tone: "danger",
-      s: "Overdue",
-    },
-    {
-      n: "INV-015",
-      c: "Bluebird Co.",
-      a: "$850.00",
-      tone: "warning",
-      s: "Pending",
-    },
-    {
-      n: "INV-013",
-      c: "Acme Corp",
-      a: "$1,200.00",
-      tone: "success",
-      s: "Paid",
-    },
-  ];
-  return (
-    <div
-      className="mx-auto w-full max-w-3xl rounded-2xl border border-border bg-surface p-3 shadow-[var(--shadow-pop)] sm:p-4"
-      aria-label="Illustration of the LedgerFlow dashboard"
-    >
-      <div className="grid gap-3 sm:grid-cols-3">
-        {[
-          { l: "Outstanding", v: "$3,250", c: "text-fg" },
-          { l: "Collected", v: "$8,400", c: "text-success" },
-          { l: "Overdue", v: "$2,400", c: "text-danger" },
-        ].map((m) => (
-          <div key={m.l} className="rounded-xl bg-surface-2 p-4 text-left">
-            <p className="text-xs font-medium text-fg-muted">{m.l}</p>
-            <p className={cn("num mt-1 text-2xl font-semibold", m.c)}>{m.v}</p>
-          </div>
-        ))}
-      </div>
-      <ul className="mt-3 divide-y divide-border overflow-hidden rounded-xl border border-border text-left">
-        {rows.map((r) => (
-          <li
-            key={r.n}
-            className="flex items-center justify-between gap-3 px-4 py-3"
-          >
-            <div className="min-w-0">
-              <p className="num text-sm font-medium">{r.n}</p>
-              <p className="truncate text-xs text-fg-muted">{r.c}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Badge tone={r.tone}>{r.s}</Badge>
-              <span className="num w-24 text-right text-sm font-semibold">
-                {r.a}
-              </span>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
+    </Reveal>
   );
 }
 
@@ -251,7 +187,7 @@ function Pricing({ cta }) {
         </div>
       </div>
 
-      <div className="mx-auto mt-8 max-w-md rounded-2xl border-2 border-accent bg-surface p-8 shadow-[var(--shadow-pop)]">
+      <Reveal className="mx-auto mt-8 max-w-md rounded-2xl border-2 border-accent bg-surface p-8 shadow-[var(--shadow-pop)]">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">{PLAN.name}</h3>
           {yearly && <Badge tone="success">Save ${savings} a year</Badge>}
@@ -291,7 +227,7 @@ function Pricing({ cta }) {
             </li>
           ))}
         </ul>
-      </div>
+      </Reveal>
     </section>
   );
 }
@@ -300,7 +236,9 @@ export function LandingPage({ isAuthed, theme, setTheme }) {
   const cta = isAuthed ? "/app" : "/login";
 
   return (
-    <div className="min-h-dvh bg-bg text-fg">
+    <div className="relative isolate min-h-dvh bg-bg text-fg">
+      <Aurora />
+
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-border bg-bg/80 backdrop-blur-lg">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
@@ -337,15 +275,12 @@ export function LandingPage({ isAuthed, theme, setTheme }) {
       <main>
         {/* Hero */}
         <section className="relative overflow-hidden px-4 pb-20 pt-16 text-center sm:px-6 sm:pt-24">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute left-1/2 top-0 -z-10 h-[28rem] w-[60rem] -translate-x-1/2 rounded-full bg-accent-soft blur-3xl"
-          />
           <Badge tone="accent" className="mb-5">
             Invoicing with an AI assistant
           </Badge>
           <h1 className="mx-auto max-w-3xl text-4xl font-semibold tracking-tight sm:text-6xl">
-            Get paid faster, with less paperwork.
+            Get paid <span className="gradient-text">faster</span>, with less
+            paperwork.
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-fg-muted">
             LedgerFlow helps freelancers and small businesses create invoices,
@@ -361,7 +296,7 @@ export function LandingPage({ isAuthed, theme, setTheme }) {
             </a>
           </div>
           <div className="mt-14">
-            <ProductPreview />
+            <AnimatedPreview />
             <p className="mt-3 text-xs text-fg-subtle">
               Sample data for illustration.
             </p>
@@ -369,24 +304,25 @@ export function LandingPage({ isAuthed, theme, setTheme }) {
         </section>
 
         {/* Pain points */}
-        <section className="border-y border-border bg-surface px-4 py-20 sm:px-6">
+        <section className="border-y border-border bg-surface/60 px-4 py-20 backdrop-blur-sm sm:px-6">
           <SectionHeading
             eyebrow="The problem"
             title="Getting paid shouldn't be this hard"
             text="Most small businesses don't lose money because of bad work. They lose it to messy invoicing."
           />
           <div className="mx-auto mt-12 grid max-w-6xl gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {PAIN_POINTS.map(({ icon: Icon, title, text }) => (
-              <div
+            {PAIN_POINTS.map(({ icon: Icon, title, text }, i) => (
+              <Reveal
                 key={title}
-                className="rounded-xl border border-border bg-bg p-6"
+                delay={i * 90}
+                className="rounded-xl border border-border bg-bg/80 p-6"
               >
                 <span className="grid h-10 w-10 place-items-center rounded-lg bg-danger-soft text-danger">
                   <Icon className="h-5 w-5" aria-hidden />
                 </span>
                 <h3 className="mt-4 font-semibold">{title}</h3>
                 <p className="mt-2 text-sm text-fg-muted">{text}</p>
-              </div>
+              </Reveal>
             ))}
           </div>
         </section>
@@ -399,10 +335,11 @@ export function LandingPage({ isAuthed, theme, setTheme }) {
             text="LedgerFlow replaces the spreadsheets and the guesswork."
           />
           <div className="mx-auto mt-12 grid max-w-6xl gap-5 md:grid-cols-2">
-            {SOLUTIONS.map(({ icon: Icon, title, text }) => (
-              <div
+            {SOLUTIONS.map(({ icon: Icon, title, text }, i) => (
+              <Reveal
                 key={title}
-                className="flex gap-4 rounded-xl border border-border bg-surface p-6"
+                delay={i * 90}
+                className="flex gap-4 rounded-xl border border-border bg-surface/80 p-6 backdrop-blur-sm"
               >
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
                   <Icon className="h-5 w-5" aria-hidden />
@@ -411,27 +348,29 @@ export function LandingPage({ isAuthed, theme, setTheme }) {
                   <h3 className="font-semibold">{title}</h3>
                   <p className="mt-1.5 text-sm text-fg-muted">{text}</p>
                 </div>
-              </div>
+              </Reveal>
             ))}
           </div>
         </section>
 
         {/* How it works */}
-        <section className="border-y border-border bg-surface px-4 py-20 sm:px-6">
+        <section className="border-y border-border bg-surface/60 px-4 py-20 backdrop-blur-sm sm:px-6">
           <SectionHeading
             eyebrow="How it works"
             title="Up and running in three steps"
           />
           <ol className="mx-auto mt-12 grid max-w-5xl gap-8 md:grid-cols-3">
             {STEPS.map((s, i) => (
-              <li key={s.title} className="text-center">
-                <span className="num mx-auto grid h-10 w-10 place-items-center rounded-full bg-accent text-sm font-semibold text-accent-fg">
-                  {i + 1}
-                </span>
-                <h3 className="mt-4 font-semibold">{s.title}</h3>
-                <p className="mx-auto mt-1.5 max-w-xs text-sm text-fg-muted">
-                  {s.text}
-                </p>
+              <li key={s.title}>
+                <Reveal delay={i * 120} className="text-center">
+                  <span className="num mx-auto grid h-10 w-10 place-items-center rounded-full bg-accent text-sm font-semibold text-accent-fg">
+                    {i + 1}
+                  </span>
+                  <h3 className="mt-4 font-semibold">{s.title}</h3>
+                  <p className="mx-auto mt-1.5 max-w-xs text-sm text-fg-muted">
+                    {s.text}
+                  </p>
+                </Reveal>
               </li>
             ))}
           </ol>

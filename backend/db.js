@@ -1,16 +1,28 @@
 const { Pool } = require("pg");
+// Automatically load variables from a .env file if it exists
+require("dotenv").config();
 
-const pool = new Pool({
-  user: "postgres",
-  host: "localhost",
-  database: "ledgerflow_db",
-  password: "password123",
-  port: "5433",
-
-  // 🛡️ THE CONNECTION POOL UPGRADE (Add this locally too!) [2.1]
-  max: 10, // Caps local simultaneous connections to 10
-  idleTimeoutMillis: 30000, // Close local idle connections after 30s
-  connectionTimeoutMillis: 2000, // Error out if a query waits over 2s
-});
+// If a single cloud connection string (like Neon) is present, use it.
+// Otherwise, fall back to the individual local variables.
+const pool = process.env.DATABASE_URL
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DATABASE_URL.includes("localhost")
+        ? false
+        : { rejectUnauthorized: false },
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+    })
+  : new Pool({
+      user: process.env.DB_USER || "postgres",
+      host: process.env.DB_HOST || "localhost",
+      database: process.env.DB_NAME || "ledgerflow_db",
+      password: process.env.DB_PASSWORD || "password123",
+      port: process.env.DB_PORT || 5433,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+    });
 
 module.exports = pool;

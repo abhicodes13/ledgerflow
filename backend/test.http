@@ -1,0 +1,6 @@
+POST http://localhost:3000/api/chat
+Content-Type: application/json
+
+{
+  "message": "Hey ledgerflow assistant, please add a new client named Tony Stark using email tony@starkindustries.com"
+}

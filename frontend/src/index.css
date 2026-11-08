@@ -81,8 +81,6 @@
   --color-warning-soft: var(--warning-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
-  --shadow-card: var(--shadow-card);
-  --shadow-pop: var(--shadow-pop);
 }
 
 @theme {

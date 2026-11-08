@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useLedgerFlowData } from "./hooks/useLedgerFlowData";
 import { useTheme } from "./hooks/useTheme";
 import { useToast } from "./components/ui";
@@ -11,25 +12,31 @@ import { ClientsView } from "./pages/ClientsView";
 import { AutomationsView } from "./pages/AutomationsView";
 import { SettingsView } from "./pages/SettingsView";
 import { invoiceState } from "./lib/format";
+import { pathToTab, tabToPath } from "./lib/routes";
 
 function App() {
   const data = useLedgerFlowData();
   const { theme, setTheme } = useTheme();
   const toast = useToast();
 
-  // 🧭 PAGE ROUTING & VIEWPORT PANEL VISIBILITY STATES
-  const [activeTab, setActiveTab] = useState("dashboard");
-  const [isConsoleVisible, setIsConsoleVisible] = useState(true); // Open on desktop by default
+  // Routing: the URL is the source of truth for the active tab
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeTab = pathToTab(location.pathname); // null = not an app page
+  const setActiveTab = (id) => navigate(tabToPath(id));
+
+  // Assistant panel visibility
+  const [isConsoleVisible, setIsConsoleVisible] = useState(true);
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
 
-  // 🔐 ORIGINAL STATE INFRASTRUCTURE FOR USER AUTHENTICATION
+  // Auth form state
   const [isRegistering, setIsRegistering] = useState(false);
   const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authMessage, setAuthMessage] = useState({ text: "", isError: false });
 
-  // 💬 CHAT HUB CONTROL DECK HANDLERS & STATUS HOOKS
+  // Chat state
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const chatBottomRef = useRef(null);
@@ -41,7 +48,8 @@ function App() {
       text: "Hi! I can add clients, draft invoices, and mark payments as received. Pick a shortcut below or just type what you need.",
     },
   ]);
-  // 🔐 SECURE STANDARD SAAS AUTHENTICATION AGGREGATOR LOOP
+
+  // Sign in / sign up
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     if (!authUsername || !authPassword) {
@@ -97,13 +105,12 @@ function App() {
     }
   };
 
-  // 🚪 WORKSPACE CLEARANCE STATE DISMANTLER
+  // Sign out (the hook's version clears everything correctly)
   const handleLogout = () => {
     data.handleLogout();
-    setActiveTab("dashboard");
   };
-  // 📊 MANUAL FORM BILLING STATEMENT DISPATCH LOOP
-  // 📊 FIXED: SCHEMA-ALIGNED MANUAL FORM BILLING STATEMENT DISPATCH LOOP
+
+  // Create invoice
   const handleInvoiceSubmitInternal = async (e) => {
     e.preventDefault();
     try {
@@ -142,6 +149,7 @@ function App() {
     }
   };
 
+  // Add client
   const handleClientSubmitInternal = async (e) => {
     e.preventDefault();
     try {
@@ -172,6 +180,7 @@ function App() {
     }
   };
 
+  // Mark invoice as paid
   const handleSettleInternal = async (id) => {
     try {
       const res = await fetch(`${data.API_BASE}/api/invoices/${id}/settle`, {
@@ -188,7 +197,8 @@ function App() {
       return false;
     }
   };
-  // 💬 CHAT TIMELINE CORE DISPATCH ENGINES
+
+  // Send a chat message
   const handleSendChatMessage = async (e) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
@@ -226,7 +236,7 @@ function App() {
           { type: "text", sender: "ai", text: resData.message },
         ]);
       }
-    } catch (err) {
+    } catch {
       setChatMessages((prev) => [
         ...prev,
         {
@@ -240,7 +250,7 @@ function App() {
     }
   };
 
-  // 🛡️ HUMAN-IN-THE-LOOP SECURE TRANSACTION APPROVAL DISPATCHER
+  // Approve an AI-proposed action
   const handleApproveAIAction = async (msgIndex, action, payload) => {
     try {
       const res = await fetch(`${data.API_BASE}/api/chat/confirm`, {
@@ -265,6 +275,7 @@ function App() {
       );
       data.fetchMetrics();
       data.fetchInvoicesList();
+      data.fetchClientsList();
     } catch (err) {
       toast.error(`Couldn't run that action: ${err.message}`);
     }
@@ -278,11 +289,16 @@ function App() {
           .includes(data.searchTerm.toLowerCase()) ||
         inv.client_name?.toLowerCase().includes(data.searchTerm.toLowerCase()),
     ) || [];
+
   const overdueCount = (data.invoicesList || []).filter(
     (inv) => invoiceState(inv) === "overdue",
   ).length;
 
+  // Logged out: everything goes to /login
   if (!data.token) {
+    if (location.pathname !== "/login") {
+      return <Navigate to="/login" replace />;
+    }
     return (
       <AuthScreen
         isRegistering={isRegistering}
@@ -301,6 +317,11 @@ function App() {
         setTheme={setTheme}
       />
     );
+  }
+
+  // Logged in: send "/", "/login" and unknown URLs to the dashboard
+  if (activeTab === null) {
+    return <Navigate to="/app" replace />;
   }
 
   return (

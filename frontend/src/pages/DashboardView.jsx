@@ -1,336 +1,402 @@
-import React, { useState } from "react";
+import { useState } from "react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  FileText,
+  Mail,
+  Percent,
+  Sparkles,
+  Wallet,
+} from "lucide-react";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  Modal,
+  PageHeader,
+  Skeleton,
+  StatusBadge,
+  useToast,
+} from "../components/ui";
+import {
+  formatCurrency,
+  formatDate,
+  invoiceAmountCents,
+  invoiceState,
+} from "../lib/format";
+import { cn } from "../lib/cn";
 
-export function DashboardView({ metrics, invoicesList, data: dataContext }) {
-  // 🌓 LOCAL STATE: MANAGES THE WORKSPACE MICRO-APPROVAL INTERACTION TILE POPUPS
-  const [activeAiActionModal, setActiveAiActionModal] = useState(null);
+// Suggestions are placeholders until the AI backend supplies real ones.
+const SUGGESTIONS = [
+  {
+    id: "rec_01",
+    title: "Send reminders for overdue invoices",
+    description:
+      "Email a polite reminder to every client who has an overdue invoice.",
+    impact: "Could speed up collections",
+    actionType: "batch_remind",
+    payload: { targets: "all_overdue" },
+  },
+  {
+    id: "rec_02",
+    title: "Draft a first invoice for new clients",
+    description:
+      "Clients with no invoices yet can get a starter invoice from a template.",
+    impact: "Gets new clients billed sooner",
+    actionType: "draft_initial",
+    payload: { template: "baseline_retainer" },
+  },
+];
 
-  const formatCurrency = (cents) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format((cents || 0) / 100);
-  };
+const TONE_STYLES = {
+  accent: "bg-accent-soft text-accent",
+  success: "bg-success-soft text-success",
+  warning: "bg-warning-soft text-warning",
+  danger: "bg-danger-soft text-danger",
+};
 
-  const allInvoices = invoicesList || [];
-  const unpaidInvoices = allInvoices.filter((inv) => inv.status !== "paid");
+function daysFromToday(dateValue) {
+  if (!dateValue) return null;
+  const today = new Date(new Date().toDateString());
+  return Math.round((new Date(dateValue) - today) / 86_400_000);
+}
 
-  const paidCount = allInvoices.filter((inv) => inv.status === "paid").length;
-  const collectionEfficiency =
-    allInvoices.length > 0
-      ? Math.round((paidCount / allInvoices.length) * 100)
-      : 100;
+function dueLabel(inv) {
+  if (inv.status === "paid") return "Paid";
+  const d = daysFromToday(inv.due_date);
+  if (d === null) return "No due date";
+  if (d < 0) return `Overdue by ${-d} day${d === -1 ? "" : "s"}`;
+  if (d === 0) return "Due today";
+  return `Due in ${d} day${d === 1 ? "" : "s"}`;
+}
 
-  const handleDispatchReminder = (invNumber, clientName) => {
-    alert(
-      `✉️ AI Dispatcher: Secure automated collection notification link transmitted to ${clientName} regarding Statement ${invNumber}.`,
-    );
-  };
-
-  // 🤖 WORKSPACE AI PREDICTIVE AUTOMATION RECOMMENDATIONS MATRIX
-  const mockAiRecommendations = [
-    {
-      id: "rec_01",
-      title: "Automated Liquidity Clearance Loop",
-      description:
-        "Trigger a batched billing sweep to close out overdue transaction columns for settled records.",
-      impact: "Accelerate collection metrics by ~12%",
-      badge: "OPTIMIZATION",
-      actionType: "batch_settle",
-      payload: { targets: "all_overdue" },
-    },
-    {
-      id: "rec_02",
-      title: "Provision Unbilled Client Workspace",
-      description:
-        "A newly created client entity has zero active invoices mapped to their relational database rows.",
-      impact: "Draft initial baseline consulting statement",
-      badge: "BILLING_GAP",
-      actionType: "draft_initial",
-      payload: { template: "baseline_retainer" },
-    },
-  ];
-
-  const handleExecuteModalAiAction = (action, payload) => {
-    alert(
-      `⚡ Core AI Handshake Triggered:\nAction: ${action.toUpperCase()}\nPayload: ${JSON.stringify(payload)}\n\nDispatching request telemetry frame straight to your backend /api/chat/confirm parser pipe now...`,
-    );
-    setActiveAiActionModal(null);
-  };
-
+function Metric({ label, value, hint, icon: Icon, tone, loading }) {
   return (
-    <div className="space-y-8 animate-fadeIn font-sans tracking-tight text-zinc-200 w-full pb-12 select-none">
-      {/* 🧭 TOP RADAR HEADER BRAND NODE */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-zinc-900 w-full">
-        <div className="space-y-0.5">
-          <h2 className="text-sm font-bold text-zinc-400 uppercase font-mono tracking-wider">
-            Workspace Performance Deck //
-          </h2>
-          <p className="text-[11px] text-zinc-500 font-medium">
-            Real-time ledger audit trails and operational intelligence
-            controllers
-          </p>
-        </div>
-        <span className="text-[9px] font-mono font-bold px-2 py-1 rounded bg-zinc-900/60 border border-zinc-800 text-blue-400 uppercase tracking-widest shadow-inner animate-pulse">
-          Live_Sync_OK
+    <Card className="p-5">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-fg-muted">{label}</p>
+        <span
+          className={cn(
+            "grid h-8 w-8 place-items-center rounded-lg",
+            TONE_STYLES[tone],
+          )}
+        >
+          <Icon className="h-4 w-4" aria-hidden />
         </span>
       </div>
+      {loading ? (
+        <Skeleton className="mt-3 h-8 w-32" />
+      ) : (
+        <p className="num mt-2 text-2xl font-semibold tracking-tight text-fg sm:text-3xl">
+          {value}
+        </p>
+      )}
+      <p className="mt-1 text-xs text-fg-subtle">{hint}</p>
+    </Card>
+  );
+}
 
-      {/* 📊 SHADCN TYPE MINIMALIST MICRO-CARD HUD MATRIX */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full">
-        <div className="p-4 rounded-xl border border-zinc-900 bg-[#0c0c0e] space-y-1 shadow-sm">
-          <p className="text-[10px] font-mono font-bold tracking-wider text-zinc-500 uppercase">
-            Outstanding Balance
-          </p>
-          <p className="text-lg font-black text-white font-mono tracking-tight">
-            {formatCurrency(metrics?.total_outstanding_cents || 0)}
-          </p>
-          <span className="text-[9px] font-sans font-medium text-zinc-600 block">
-            Active outstanding accounts collection pipeline
-          </span>
+function RowSkeleton() {
+  return (
+    <div className="space-y-4 p-5">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="flex items-center justify-between gap-4">
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-3 w-40" />
+          </div>
+          <Skeleton className="h-5 w-20" />
         </div>
-        <div className="p-4 rounded-xl border border-zinc-900 bg-[#0c0c0e] space-y-1 shadow-sm">
-          <p className="text-[10px] font-mono font-bold tracking-wider text-zinc-500 uppercase">
-            Settled Capital
-          </p>
-          <p className="text-lg font-black text-emerald-400 font-mono tracking-tight">
-            {formatCurrency(metrics?.total_collected_cents || 0)}
-          </p>
-          <span className="text-[9px] font-sans font-medium text-zinc-600 block">
-            Verified funds written completely to Postgres
-          </span>
-        </div>
-        <div className="p-4 rounded-xl border border-zinc-900 bg-[#0c0c0e] space-y-1 shadow-sm">
-          <p className="text-[10px] font-mono font-bold tracking-wider text-zinc-500 uppercase">
-            System Efficiency
-          </p>
-          <p className="text-lg font-black text-blue-400 font-mono tracking-tight">
-            {collectionEfficiency}%
-          </p>
-          <span className="text-[9px] font-sans font-medium text-zinc-600 block">
-            Ratio of total accounts settled vs drafted logs
-          </span>
-        </div>
-      </div>
+      ))}
+    </div>
+  );
+}
 
-      {/* 🚨 CRITICAL TRACK: ATTENTION REQUIRED / ARREARS BANNER */}
-      <div className="w-full space-y-3">
-        <div className="flex items-center space-x-2">
-          <div className="w-1 h-1 bg-amber-500 rounded-full animate-ping" />
-          <h3 className="text-xs font-black tracking-wider text-white uppercase font-mono">
-            Attention Required / Pending Arrears
-          </h3>
-        </div>
-        <div className="w-full border border-zinc-900 rounded-xl bg-[#0c0c0e] divide-y divide-zinc-900/60 overflow-hidden shadow-md">
-          {unpaidInvoices.length === 0 ? (
-            <p className="p-6 text-center text-zinc-600 font-mono text-[10px] uppercase font-bold tracking-widest">
-              Clean Slate Registry. Zero pending collections anomalies detected.
-            </p>
-          ) : (
-            unpaidInvoices.map((inv) => (
-              <div
-                key={inv.id}
-                className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0c0c0e] hover:bg-zinc-900/10 transition-colors"
+export function DashboardView({
+  metrics,
+  invoicesList,
+  loading = false,
+  currentUser,
+  onNavigate,
+}) {
+  const toast = useToast();
+  const [suggestion, setSuggestion] = useState(null);
+
+  const all = invoicesList || [];
+  const unpaid = all.filter((inv) => inv.status !== "paid");
+  const overdue = unpaid.filter((inv) => invoiceState(inv) === "overdue");
+  const overdueCents = overdue.reduce(
+    (sum, inv) => sum + invoiceAmountCents(inv),
+    0,
+  );
+  const paidCount = all.length - unpaid.length;
+  const collectionRate = all.length
+    ? Math.round((paidCount / all.length) * 100)
+    : null;
+
+  // Overdue first, then by soonest due date; invoices without a date go last.
+  const attention = [...unpaid].sort((a, b) => {
+    const ao = invoiceState(a) === "overdue" ? 0 : 1;
+    const bo = invoiceState(b) === "overdue" ? 0 : 1;
+    if (ao !== bo) return ao - bo;
+    return (
+      (a.due_date ? new Date(a.due_date) : Infinity) -
+      (b.due_date ? new Date(b.due_date) : Infinity)
+    );
+  });
+
+  const recent = [...all]
+    .sort(
+      (a, b) =>
+        new Date(b.created_at || 0) - new Date(a.created_at || 0) ||
+        Number(b.id) - Number(a.id),
+    )
+    .slice(0, 5);
+
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const name = currentUser?.username;
+  const clientCount = metrics?.total_clients_count || 0;
+
+  const sendReminder = (inv) =>
+    toast.info(
+      `Reminder for ${inv.invoice_number} to ${inv.client_name} (preview: email sending isn't connected yet)`,
+    );
+
+  return (
+    <>
+      <PageHeader
+        title={name ? `${greeting}, ${name}` : greeting}
+        description={`${clientCount} client${clientCount === 1 ? "" : "s"} · ${all.length} invoice${all.length === 1 ? "" : "s"}`}
+        actions={
+          <Button onClick={() => onNavigate?.("billing")}>
+            <FileText className="h-4 w-4" aria-hidden />
+            Go to invoices
+          </Button>
+        }
+      />
+
+      {/* Key numbers */}
+      <section
+        aria-label="Key metrics"
+        className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4"
+      >
+        <Metric
+          label="Outstanding"
+          value={formatCurrency(metrics?.total_outstanding_cents)}
+          hint="Waiting to be paid"
+          icon={Wallet}
+          tone="accent"
+          loading={loading}
+        />
+        <Metric
+          label="Collected"
+          value={formatCurrency(metrics?.total_collected_cents)}
+          hint="Paid by clients"
+          icon={CheckCircle2}
+          tone="success"
+          loading={loading}
+        />
+        <Metric
+          label="Overdue"
+          value={formatCurrency(overdueCents)}
+          hint={`${overdue.length} invoice${overdue.length === 1 ? "" : "s"} past due`}
+          icon={AlertTriangle}
+          tone={overdue.length ? "danger" : "warning"}
+          loading={loading}
+        />
+        <Metric
+          label="Collection rate"
+          value={collectionRate === null ? "—" : `${collectionRate}%`}
+          hint="Invoices paid vs. created"
+          icon={Percent}
+          tone="accent"
+          loading={loading}
+        />
+      </section>
+
+      {/* Needs attention */}
+      <Card>
+        <CardHeader
+          title="Needs attention"
+          description="Unpaid invoices, most urgent first."
+          action={
+            attention.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onNavigate?.("billing")}
               >
-                <div className="space-y-1">
-                  <div className="flex items-center space-x-2.5">
-                    <span className="font-mono font-bold text-xs text-white">
+                View all
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+              </Button>
+            )
+          }
+        />
+        {loading ? (
+          <RowSkeleton />
+        ) : attention.length === 0 ? (
+          <EmptyState
+            icon={CheckCircle2}
+            title="You're all caught up"
+            description="There are no unpaid invoices right now."
+          />
+        ) : (
+          <ul className="divide-y divide-border">
+            {attention.slice(0, 5).map((inv) => (
+              <li
+                key={inv.id}
+                className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="num text-sm font-medium text-fg">
                       {inv.invoice_number}
                     </span>
-                    <span className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold uppercase tracking-wider bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                      OVERDUE_COLLECTION
-                    </span>
+                    <StatusBadge invoice={inv} />
                   </div>
-                  <p className="text-[11px] text-zinc-500 font-medium font-sans">
-                    {inv.client_name} •{" "}
-                    <span className="text-zinc-600 font-mono">
-                      Limit:{" "}
-                      {inv.due_date
-                        ? new Date(inv.due_date).toLocaleDateString()
-                        : "N/A"}
-                    </span>
+                  <p className="mt-0.5 truncate text-sm text-fg-muted">
+                    {inv.client_name} · {dueLabel(inv)}
+                    {inv.due_date && ` (${formatDate(inv.due_date)})`}
                   </p>
                 </div>
-                <div className="flex items-center justify-between sm:justify-end gap-6 font-mono text-xs w-full sm:w-auto">
-                  <span className="font-bold text-amber-500 font-sans tracking-tight">
-                    {formatCurrency(
-                      inv.amount_cents ||
-                        inv.total_amount_cents ||
-                        inv.amount ||
-                        0,
-                    )}
+                <div className="flex items-center justify-between gap-4 sm:justify-end">
+                  <span className="num text-sm font-semibold text-fg">
+                    {formatCurrency(invoiceAmountCents(inv))}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleDispatchReminder(
-                        inv.invoice_number,
-                        inv.client_name,
-                      )
-                    }
-                    className="text-[9px] font-mono font-bold tracking-wider px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition-colors uppercase"
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => sendReminder(inv)}
                   >
-                    [DISPATCH REMINDER]
-                  </button>
+                    <Mail className="h-3.5 w-3.5" aria-hidden />
+                    Remind
+                  </Button>
                 </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-      {/* 🤖 TRACK 2: AI COBALT PREDICTIVE AUTOMATION RECOMMENDATIONS */}
-      <div className="w-full space-y-3">
-        <div className="flex items-center space-x-2">
-          <div className="w-1 h-1 bg-blue-500 rounded-full" />
-          <h3 className="text-xs font-black tracking-wider text-white uppercase font-mono">
-            Autonomous AI Optimization Insights
-          </h3>
-        </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {!loading && attention.length > 5 && (
+          <p className="border-t border-border px-5 py-3 text-xs text-fg-subtle">
+            Showing 5 of {attention.length} unpaid invoices.
+          </p>
+        )}
+      </Card>
 
-        <div className="w-full border border-zinc-900 rounded-xl bg-[#0c0c0e] divide-y divide-zinc-900/60 overflow-hidden shadow-md">
-          {mockAiRecommendations.map((rec) => (
-            <div
-              key={rec.id}
-              className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0c0c0e] hover:bg-zinc-900/10 transition-colors animate-fadeIn"
-            >
-              <div className="space-y-1 sm:max-w-[75%]">
-                <div className="flex items-center space-x-2.5">
-                  <span className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold uppercase tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                    {rec.badge}
-                  </span>
-                  <h4 className="font-sans font-bold text-xs text-zinc-200">
-                    {rec.title}
-                  </h4>
-                </div>
-                <p className="text-[11px] text-zinc-500 font-medium font-sans leading-relaxed">
-                  {rec.description}{" "}
-                  <span className="text-zinc-400 font-mono text-[10px] block mt-0.5">
-                    Expected Impact: {rec.impact}
-                  </span>
-                </p>
-              </div>
-
-              <div className="flex items-center justify-end font-mono text-xs w-full sm:w-auto shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setActiveAiActionModal(rec)}
-                  className="w-full sm:w-auto text-[9px] font-mono font-black tracking-wider px-4 py-2 rounded-lg bg-blue-600 border border-blue-500 text-white hover:bg-blue-500 transition-all uppercase shadow-[0_2px_10px_rgba(37,99,235,0.15)]"
+      <div className="grid gap-6 2xl:grid-cols-2">
+        {/* Recent invoices */}
+        <Card>
+          <CardHeader
+            title="Recent invoices"
+            description="Your latest activity."
+          />
+          {loading ? (
+            <RowSkeleton />
+          ) : recent.length === 0 ? (
+            <EmptyState
+              icon={FileText}
+              title="No invoices yet"
+              description="Create your first invoice to see it here."
+              action={
+                <Button size="sm" onClick={() => onNavigate?.("billing")}>
+                  Create invoice
+                </Button>
+              }
+            />
+          ) : (
+            <ul className="divide-y divide-border">
+              {recent.map((inv) => (
+                <li
+                  key={inv.id}
+                  className="flex items-center justify-between gap-4 px-5 py-3.5"
                 >
-                  [ENGAGE]
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+                  <div className="min-w-0">
+                    <p className="num text-sm font-medium text-fg">
+                      {inv.invoice_number}
+                    </p>
+                    <p className="truncate text-sm text-fg-muted">
+                      {inv.client_name}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <StatusBadge invoice={inv} />
+                    <span className="num w-24 text-right text-sm text-fg">
+                      {formatCurrency(invoiceAmountCents(inv))}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
 
-      {/* ⚙️ TRACK 3: INFRASTRUCTURE EFFICIENCY RECAP */}
-      <div className="w-full space-y-3">
-        <h3 className="text-xs font-black tracking-wider text-white uppercase font-mono px-0.5">
-          Infrastructure Efficiency Summary
-        </h3>
-        <div className="w-full bg-[#0c0c0e] border border-zinc-900 rounded-xl p-5 shadow-sm text-xs font-medium grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <div className="space-y-1">
-            <p className="text-[9px] font-mono font-bold tracking-wider text-zinc-500 uppercase">
-              Multi-Tenant Mapping Status
-            </p>
-            <p className="text-white leading-relaxed font-sans text-[11px]">
-              System currently multiplexing{" "}
-              <span className="text-blue-500 font-bold font-mono">
-                {allInvoices.length} billing rows
-              </span>{" "}
-              cleanly across{" "}
-              <span className="text-purple-400 font-bold font-mono">
-                {metrics?.total_clients_count || 0} customer partitions
-              </span>{" "}
-              inside isolated local PostgreSQL table frames.
-            </p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-[9px] font-mono font-bold tracking-wider text-zinc-500 uppercase">
-              SaaS Optimization Note
-            </p>
-            <p className="text-zinc-400 leading-relaxed font-sans text-[11px]">
-              Maintain an active collection velocity threshold higher than{" "}
-              <span className="text-emerald-400 font-bold font-mono">85%</span>{" "}
-              to maximize operational liquidity parameters. Run the AI sidebar
-              console commands to parse intent rows automatically.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* 🚀 HIGH-FIDELITY INTERACTIVE AI MICRO-APPROVAL OVERLAY MODAL */}
-      {activeAiActionModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div
-            className="w-full max-w-md rounded-2xl border border-zinc-800 bg-[#141419] shadow-2xl p-6 relative flex flex-col space-y-5 max-h-[85vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <div className="space-y-0.5">
-                <span className="text-[9px] font-bold text-blue-500 uppercase font-mono tracking-widest">
-                  AI_Decision_Verification
+        {/* AI suggestions */}
+        <Card>
+          <CardHeader
+            title="AI suggestions"
+            description="Ideas to save you time."
+            action={<Badge tone="accent">Preview</Badge>}
+          />
+          <ul className="divide-y divide-border">
+            {SUGGESTIONS.map((rec) => (
+              <li key={rec.id} className="flex items-start gap-3 px-5 py-4">
+                <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+                  <Sparkles className="h-4 w-4" aria-hidden />
                 </span>
-                <h2 className="text-xs font-black text-white uppercase font-sans">
-                  Confirm Automation Prompt
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveAiActionModal(null)}
-                className="p-1.5 border border-zinc-800 hover:border-zinc-700 bg-[#0e0e11] rounded-xl text-zinc-500 text-[10px] font-bold px-3 font-mono transition-colors"
-              >
-                ESC
-              </button>
-            </div>
-
-            {/* Content Body Surface */}
-            <div className="p-4 rounded-xl border border-zinc-800/80 bg-[#0e0e11]/50 space-y-4 font-sans text-xs">
-              <div className="space-y-1">
-                <span className="text-[9px] font-mono font-bold text-blue-400 uppercase tracking-wider block">
-                  TARGET_ROUTING_ACTION
-                </span>
-                <h3 className="text-xs font-black text-white uppercase font-mono">
-                  {activeAiActionModal.actionType}
-                </h3>
-              </div>
-              <div className="space-y-1.5 border-t border-zinc-800/60 pt-3 text-zinc-400 leading-relaxed font-medium">
-                <p>{activeAiActionModal.description}</p>
-                <div className="p-3 bg-[#141419] border border-zinc-800/50 rounded-lg text-[10px] font-mono font-bold text-zinc-500 flex items-center justify-between">
-                  <span>PAYLOAD_ARGUMENTS:</span>
-                  <span className="text-zinc-300">
-                    {JSON.stringify(activeAiActionModal.payload)}
-                  </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-fg">{rec.title}</p>
+                  <p className="mt-0.5 text-sm text-fg-muted">
+                    {rec.description}
+                  </p>
+                  <p className="mt-1 text-xs text-fg-subtle">{rec.impact}</p>
                 </div>
-              </div>
-            </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setSuggestion(rec)}
+                >
+                  Review
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </div>
 
-            {/* Action Triggers Ribbon */}
-            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono font-bold pt-1">
-              <button
-                type="button"
-                onClick={() =>
-                  handleExecuteModalAiAction(
-                    activeAiActionModal.actionType,
-                    activeAiActionModal.payload,
-                  )
-                }
-                className="bg-blue-600 hover:bg-blue-500 text-white py-2.5 rounded-xl transition-all shadow-[0_4px_15px_rgba(37,99,235,0.25)] uppercase tracking-wider font-black"
-              >
-                CONFIRM_EXECUTE
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveAiActionModal(null)}
-                className="bg-[#1c1c24] hover:bg-[#22222c] border border-zinc-800 py-2.5 rounded-xl text-zinc-400 transition-colors uppercase text-center"
-              >
-                [ABORT]
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      <Modal
+        open={!!suggestion}
+        onOpenChange={(open) => !open && setSuggestion(null)}
+        title={suggestion?.title ?? ""}
+        description="Review before anything runs."
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setSuggestion(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                toast.info(
+                  "This is a preview. Suggestions aren't connected to the backend yet.",
+                );
+                setSuggestion(null);
+              }}
+            >
+              Run action
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-fg-muted">{suggestion?.description}</p>
+        <p className="mt-3 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-subtle">
+          Action: <span className="num">{suggestion?.actionType}</span>
+        </p>
+      </Modal>
+    </>
   );
 }

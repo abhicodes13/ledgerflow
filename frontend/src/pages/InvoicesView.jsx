@@ -26,6 +26,7 @@ import {
   formatDate,
   invoiceAmountCents,
   invoiceState,
+  nextInvoiceNumber,
 } from "../lib/format";
 import { cn } from "../lib/cn";
 
@@ -127,6 +128,14 @@ export function InvoicesView({
         parseFloat(i.price) >= 0,
     );
 
+  // Open the modal with a suggested number (only if the field is empty)
+  const openCreate = () => {
+    if (!data.invoiceNumber?.trim()) {
+      data.setInvoiceNumber(nextInvoiceNumber(data.invoicesList));
+    }
+    setCreateOpen(true);
+  };
+
   const submitInvoice = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -180,7 +189,7 @@ export function InvoicesView({
         title="Invoices"
         description="Create, track, and collect payment on your invoices."
         actions={
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button onClick={openCreate}>
             <Plus className="h-4 w-4" aria-hidden />
             New invoice
           </Button>
@@ -358,6 +367,7 @@ export function InvoicesView({
             </Select>
             <Input
               label="Invoice number"
+              hint="Suggested from your last invoice"
               value={data.invoiceNumber || ""}
               onChange={(e) => data.setInvoiceNumber(e.target.value)}
               placeholder="INV-0001"

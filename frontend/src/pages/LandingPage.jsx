@@ -19,6 +19,7 @@ import { ThemeToggle } from "../components/layout/ThemeToggle";
 import { Badge } from "../components/ui";
 import { Aurora, Reveal, AnimatedPreview } from "../components/landing/Effects";
 import { cn } from "../lib/cn";
+import { Showcase } from "../components/landing/Showcase";
 
 /* ───────── Edit your plan here ───────── */
 const PLAN = {
@@ -352,7 +353,22 @@ export function LandingPage({ isAuthed, theme, setTheme }) {
             ))}
           </div>
         </section>
-
+        {/* Product tour */}
+        <section className="px-4 pb-20 sm:px-6">
+          <SectionHeading
+            eyebrow="See it in action"
+            title="Minutes of work, done in seconds"
+            text="A quick look at how LedgerFlow handles the everyday tasks."
+          />
+          <div className="mt-12">
+            <Reveal>
+              <Showcase />
+            </Reveal>
+            <p className="mt-6 text-center text-xs text-fg-subtle">
+              Sample data for illustration.
+            </p>
+          </div>
+        </section>
         {/* How it works */}
         <section className="border-y border-border bg-surface/60 px-4 py-20 backdrop-blur-sm sm:px-6">
           <SectionHeading

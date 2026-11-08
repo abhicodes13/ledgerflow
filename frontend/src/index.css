@@ -253,3 +253,22 @@
     transition: none;
   }
 }
+
+@keyframes progress-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.progress-fill {
+  transform-origin: left;
+  animation: progress-fill linear forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill {
+    animation: none;
+    transform: scaleX(1);
+  }
+}

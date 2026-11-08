@@ -3,7 +3,7 @@ import { CheckCircle2 } from "lucide-react";
 import { Badge } from "../ui";
 import { cn } from "../../lib/cn";
 
-const prefersReducedMotion = () =>
+export const prefersReducedMotion = () =>
   typeof window !== "undefined" &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -56,7 +56,7 @@ export function Reveal({ delay = 0, className, children }) {
 }
 
 /* Smoothly animates a number toward its target */
-function useAnimatedNumber(target, duration = 900) {
+export function useAnimatedNumber(target, duration = 900) {
   const [value, setValue] = useState(0);
   const from = useRef(0);
 

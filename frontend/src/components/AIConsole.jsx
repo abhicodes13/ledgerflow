@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/cn";
 import { Button } from "./ui";
+import { DetailsCard, RichText } from "./ChatContent";
 
 export function AIConsole({
   chatInput,
@@ -117,23 +118,42 @@ export function AIConsole({
           const isUser = msg.sender === "user";
 
           if (msg.type === "action_deck") {
-            return (
-              <div key={index} className="space-y-3 animate-fadeIn">
-                <div className="max-w-[90%] rounded-2xl rounded-tl-sm bg-surface-2 px-3.5 py-2.5 text-sm text-fg">
-                  {msg.text}
+            const confirmed =
+              !isUser && /^Action Confirmed:/i.test(msg.text || "");
+
+            if (confirmed) {
+              return (
+                <div
+                  key={index}
+                  className="flex items-start gap-2.5 rounded-xl border border-success/30 bg-success-soft p-3.5 text-sm text-fg animate-fadeIn"
+                >
+                  <CheckCircle2
+                    className="mt-0.5 h-4 w-4 shrink-0 text-success"
+                    aria-hidden
+                  />
+                  <div className="min-w-0">
+                    <RichText
+                      text={msg.text.replace(/^Action Confirmed:\s*/i, "")}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  {QUICK_ACTIONS.map(({ icon: Icon, label, run }) => (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={run}
-                      className="flex w-full items-center gap-3 rounded-xl border border-border px-3.5 py-2.5 text-left text-sm font-medium text-fg transition-colors hover:border-accent hover:bg-accent-soft"
-                    >
-                      <Icon className="h-4 w-4 text-accent" aria-hidden />
-                      {label}
-                    </button>
-                  ))}
+              );
+            }
+
+            return (
+              <div
+                key={index}
+                className={cn("flex animate-fadeIn", isUser && "justify-end")}
+              >
+                <div
+                  className={cn(
+                    "max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm",
+                    isUser
+                      ? "rounded-br-sm bg-accent text-accent-fg"
+                      : "rounded-tl-sm bg-surface-2 text-fg",
+                  )}
+                >
+                  {isUser ? msg.text : <RichText text={msg.text} />}
                 </div>
               </div>
             );
@@ -150,9 +170,10 @@ export function AIConsole({
                   <ShieldCheck className="h-4 w-4" aria-hidden />
                   Please confirm
                 </div>
-                <p className="whitespace-pre-wrap text-sm text-fg">
-                  {msg.text}
-                </p>
+                <div className="text-sm text-fg">
+                  <RichText text={msg.text} />
+                </div>
+                <DetailsCard data={msg.data} />
                 <div className="flex gap-2">
                   <Button
                     size="sm"

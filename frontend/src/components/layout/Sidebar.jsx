@@ -1,3 +1,4 @@
+import { NavLink } from "react-router-dom";
 import { LogOut, Sparkles } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { NAV } from "./nav";
@@ -5,8 +6,6 @@ import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 
 export function Sidebar({
-  activeTab,
-  setActiveTab,
   badges = {},
   theme,
   setTheme,
@@ -41,35 +40,35 @@ export function Sidebar({
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-surface md:flex">
       <div className="flex h-16 items-center px-5">
-        <Logo />
+        <NavLink to="/" aria-label="LedgerFlow home">
+          <Logo />
+        </NavLink>
       </div>
 
       <nav aria-label="Main" className="flex-1 space-y-1 px-3 py-2">
-        {NAV.map(({ id, label, icon: Icon }) => {
-          const active = activeTab === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setActiveTab(id)}
-              aria-current={active ? "page" : undefined}
-              className={cn(
+        {NAV.map(({ id, label, icon: Icon, to, end }) => (
+          <NavLink
+            key={id}
+            to={to}
+            end={end}
+            className={({ isActive }) =>
+              cn(
                 "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                active
+                isActive
                   ? "bg-accent-soft text-accent"
                   : "text-fg-muted hover:bg-surface-2 hover:text-fg",
-              )}
-            >
-              <Icon className="h-[18px] w-[18px]" aria-hidden />
-              <span className="flex-1 text-left">{label}</span>
-              {badges[id] > 0 && (
-                <span className="rounded-full bg-danger-soft px-1.5 text-xs font-semibold leading-5 text-danger">
-                  {badges[id]}
-                </span>
-              )}
-            </button>
-          );
-        })}
+              )
+            }
+          >
+            <Icon className="h-[18px] w-[18px]" aria-hidden />
+            <span className="flex-1">{label}</span>
+            {badges[id] > 0 && (
+              <span className="rounded-full bg-danger-soft px-1.5 text-xs font-semibold leading-5 text-danger">
+                {badges[id]}
+              </span>
+            )}
+          </NavLink>
+        ))}
       </nav>
 
       <div className="space-y-3 border-t border-border p-3">

@@ -1,14 +1,13 @@
+import { useLocation } from "react-router-dom";
 import { LogOut, Sparkles } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { Button } from "../ui";
 import { Logo } from "./Logo";
-import { Sidebar } from "./SideBar";
+import { Sidebar } from "./Sidebar";
 import { BottomNav } from "./BottomNav";
 import { ThemeCycle } from "./ThemeToggle";
 
 export function AppShell({
-  activeTab,
-  setActiveTab,
   badges,
   theme,
   setTheme,
@@ -22,11 +21,11 @@ export function AppShell({
   assistant,
   children,
 }) {
+  const { pathname } = useLocation();
+
   return (
     <div className="flex h-dvh overflow-hidden bg-bg text-fg">
       <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
         badges={badges}
         theme={theme}
         setTheme={setTheme}
@@ -68,7 +67,7 @@ export function AppShell({
         <div className="flex min-h-0 flex-1">
           <main className="min-w-0 flex-1 overflow-y-auto">
             <div
-              key={activeTab}
+              key={pathname}
               className="mx-auto w-full max-w-6xl animate-fadeIn space-y-8 px-4 py-6 pb-28 sm:px-6 md:pb-10 lg:px-8"
             >
               {children}
@@ -101,11 +100,7 @@ export function AppShell({
         />
       )}
 
-      <BottomNav
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        badges={badges}
-      />
+      <BottomNav badges={badges} />
     </div>
   );
 }

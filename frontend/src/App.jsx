@@ -1,28 +1,37 @@
 import React, { useState, useRef } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import {
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { useLedgerFlowData } from "./hooks/useLedgerFlowData";
 import { useTheme } from "./hooks/useTheme";
 import { useToast } from "./components/ui";
 import { AppShell } from "./components/layout/AppShell";
 import { AuthScreen } from "./components/layout/AuthScreen";
+import { RequireAuth } from "./components/RequireAuth";
 import { AIConsole } from "./components/AIConsole";
+import { LandingPage } from "./pages/LandingPage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 import { DashboardView } from "./pages/DashboardView";
 import { InvoicesView } from "./pages/InvoicesView";
 import { ClientsView } from "./pages/ClientsView";
 import { AutomationsView } from "./pages/AutomationsView";
 import { SettingsView } from "./pages/SettingsView";
 import { invoiceState } from "./lib/format";
-import { pathToTab, tabToPath } from "./lib/routes";
+import { tabToPath } from "./lib/routes";
 
 function App() {
   const data = useLedgerFlowData();
   const { theme, setTheme } = useTheme();
   const toast = useToast();
 
-  // Routing: the URL is the source of truth for the active tab
   const location = useLocation();
   const navigate = useNavigate();
-  const activeTab = pathToTab(location.pathname); // null = not an app page
+  // Used by the assistant shortcuts and dashboard buttons: setActiveTab("billing")
   const setActiveTab = (id) => navigate(tabToPath(id));
 
   // Assistant panel visibility
@@ -105,7 +114,7 @@ function App() {
     }
   };
 
-  // Sign out (the hook's version clears everything correctly)
+  // Sign out: RequireAuth sends you to /login once the token is cleared
   const handleLogout = () => {
     data.handleLogout();
   };
@@ -294,40 +303,9 @@ function App() {
     (inv) => invoiceState(inv) === "overdue",
   ).length;
 
-  // Logged out: everything goes to /login
-  if (!data.token) {
-    if (location.pathname !== "/login") {
-      return <Navigate to="/login" replace />;
-    }
-    return (
-      <AuthScreen
-        isRegistering={isRegistering}
-        onToggleMode={() => {
-          setIsRegistering(!isRegistering);
-          setAuthMessage({ text: "", isError: false });
-        }}
-        username={authUsername}
-        setUsername={setAuthUsername}
-        password={authPassword}
-        setPassword={setAuthPassword}
-        message={authMessage}
-        submitting={authSubmitting}
-        onSubmit={handleAuthSubmit}
-        theme={theme}
-        setTheme={setTheme}
-      />
-    );
-  }
-
-  // Logged in: send "/", "/login" and unknown URLs to the dashboard
-  if (activeTab === null) {
-    return <Navigate to="/app" replace />;
-  }
-
-  return (
+  // Layout route: the shell wraps every /app/* page
+  const shell = (
     <AppShell
-      activeTab={activeTab}
-      setActiveTab={setActiveTab}
       badges={{ billing: overdueCount }}
       theme={theme}
       setTheme={setTheme}
@@ -356,39 +334,100 @@ function App() {
         />
       }
     >
-      {activeTab === "dashboard" && (
-        <DashboardView
-          metrics={data.metrics}
-          invoicesList={data.invoicesList}
-          loading={data.loading}
-          currentUser={data.currentUser}
-          onNavigate={setActiveTab}
-        />
-      )}
-      {activeTab === "billing" && (
-        <InvoicesView
-          data={data}
-          filteredInvoices={filteredInvoices}
-          handleInvoiceSubmitInternal={handleInvoiceSubmitInternal}
-          handleSettleInternal={handleSettleInternal}
-          onNavigate={setActiveTab}
-        />
-      )}
-      {activeTab === "customers" && (
-        <ClientsView
-          data={data}
-          handleClientSubmitInternal={handleClientSubmitInternal}
-        />
-      )}
-      {activeTab === "automations" && <AutomationsView />}
-      {activeTab === "settings" && (
-        <SettingsView
-          theme={theme}
-          setTheme={setTheme}
-          currentUser={data.currentUser}
-        />
-      )}
+      <Outlet />
     </AppShell>
+  );
+
+  const loginElement = data.token ? (
+    <Navigate to={location.state?.from?.pathname ?? "/app"} replace />
+  ) : (
+    <AuthScreen
+      isRegistering={isRegistering}
+      onToggleMode={() => {
+        setIsRegistering(!isRegistering);
+        setAuthMessage({ text: "", isError: false });
+      }}
+      username={authUsername}
+      setUsername={setAuthUsername}
+      password={authPassword}
+      setPassword={setAuthPassword}
+      message={authMessage}
+      submitting={authSubmitting}
+      onSubmit={handleAuthSubmit}
+      theme={theme}
+      setTheme={setTheme}
+    />
+  );
+
+  return (
+    <Routes>
+      <Route
+        path="/"
+        element={
+          <LandingPage
+            isAuthed={!!data.token}
+            theme={theme}
+            setTheme={setTheme}
+          />
+        }
+      />
+      <Route path="/login" element={loginElement} />
+
+      <Route element={<RequireAuth token={data.token} />}>
+        <Route path="/app" element={shell}>
+          <Route
+            index
+            element={
+              <DashboardView
+                metrics={data.metrics}
+                invoicesList={data.invoicesList}
+                loading={data.loading}
+                currentUser={data.currentUser}
+                onNavigate={setActiveTab}
+              />
+            }
+          />
+          <Route
+            path="invoices"
+            element={
+              <InvoicesView
+                data={data}
+                filteredInvoices={filteredInvoices}
+                handleInvoiceSubmitInternal={handleInvoiceSubmitInternal}
+                handleSettleInternal={handleSettleInternal}
+                onNavigate={setActiveTab}
+              />
+            }
+          />
+          <Route
+            path="clients"
+            element={
+              <ClientsView
+                data={data}
+                handleClientSubmitInternal={handleClientSubmitInternal}
+              />
+            }
+          />
+          <Route path="automations" element={<AutomationsView />} />
+          <Route
+            path="settings"
+            element={
+              <SettingsView
+                theme={theme}
+                setTheme={setTheme}
+                currentUser={data.currentUser}
+              />
+            }
+          />
+          <Route
+            path="*"
+            element={<NotFoundPage home="/app" label="Back to dashboard" />}
+          />
+        </Route>
+      </Route>
+
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
   );
 }
 

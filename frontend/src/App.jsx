@@ -38,7 +38,7 @@ function App() {
     {
       type: "action_deck",
       sender: "ai",
-      text: "Welcome to your LedgerFlow assistant. Click an active macro card below or input a standard text prompt to execute actions hands-free:",
+      text: "Hi! I can add clients, draft invoices, and mark payments as received. Pick a shortcut below or just type what you need.",
     },
   ]);
   // 🔐 SECURE STANDARD SAAS AUTHENTICATION AGGREGATOR LOOP

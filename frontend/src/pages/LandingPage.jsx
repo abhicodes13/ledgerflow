@@ -17,9 +17,9 @@ import {
 import { Logo } from "../components/layout/Logo";
 import { ThemeToggle } from "../components/layout/ThemeToggle";
 import { Badge } from "../components/ui";
-import { Aurora, Reveal, AnimatedPreview } from "../components/landing/Effects";
-import { cn } from "../lib/cn";
+import { Aurora, Reveal } from "../components/landing/Effects";
 import { Showcase } from "../components/landing/Showcase";
+import { cn } from "../lib/cn";
 
 /* ───────── Edit your plan here ───────── */
 const PLAN = {
@@ -107,12 +107,28 @@ const FAQ = [
     a: "Freelancers, consultants, and small service businesses who send invoices and want a simple way to track who has paid.",
   },
   {
-    q: "Will the AI assistant change my data without asking?",
-    a: "No. The assistant prepares an action, such as adding a client or creating an invoice, and shows you a summary. Nothing runs until you press Confirm.",
+    q: "What can the AI assistant do?",
+    a: "It can add clients, draft invoices, and mark invoices as paid from a plain-English request. Each time, it shows you a summary first.",
+  },
+  {
+    q: "Will the AI change my data without asking?",
+    a: "No. The assistant prepares an action and waits. Nothing runs until you press Confirm, and you can cancel anything that looks wrong.",
+  },
+  {
+    q: "What if the assistant misunderstands me?",
+    a: "That's why the confirmation step exists. You see exactly what it's about to do, such as the client name or invoice items, before it happens.",
   },
   {
     q: "Is my data private?",
-    a: "Yes. Each account can only see its own clients and invoices.",
+    a: "Yes. You sign in to your own account, and each account can only see its own clients and invoices.",
+  },
+  {
+    q: "Does it work on my phone?",
+    a: "Yes. LedgerFlow adapts to phones, tablets, and laptops, and has light and dark themes.",
+  },
+  {
+    q: "Can I email invoices or accept card payments?",
+    a: "Not yet. Emailing invoices and online card payments are coming. Today you create invoices, track their status, and mark them paid inside LedgerFlow.",
   },
   {
     q: "Can I switch between monthly and yearly billing?",
@@ -274,8 +290,8 @@ export function LandingPage({ isAuthed, theme, setTheme }) {
       </header>
 
       <main>
-        {/* Hero */}
-        <section className="relative overflow-hidden px-4 pb-20 pt-16 text-center sm:px-6 sm:pt-24">
+        {/* Hero: headline + live product tour */}
+        <section className="relative px-4 pb-20 pt-12 text-center sm:px-6 sm:pt-16">
           <Badge tone="accent" className="mb-5">
             Invoicing with an AI assistant
           </Badge>
@@ -283,11 +299,11 @@ export function LandingPage({ isAuthed, theme, setTheme }) {
             Get paid <span className="gradient-text">faster</span>, with less
             paperwork.
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-fg-muted">
-            LedgerFlow helps freelancers and small businesses create invoices,
-            see exactly who owes what, and hand the busywork to an AI assistant.
+          <p className="mx-auto mt-5 max-w-2xl text-lg text-fg-muted">
+            Create invoices, see exactly who owes what, and let an AI assistant
+            handle the typing. Nothing changes until you confirm.
           </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link to={cta} className={btnPrimary}>
               {isAuthed ? "Open your dashboard" : "Get started"}
               <ArrowRight className="h-4 w-4" aria-hidden />
@@ -296,9 +312,10 @@ export function LandingPage({ isAuthed, theme, setTheme }) {
               See pricing
             </a>
           </div>
-          <div className="mt-14">
-            <AnimatedPreview />
-            <p className="mt-3 text-xs text-fg-subtle">
+
+          <div className="mt-12">
+            <Showcase />
+            <p className="mt-6 text-xs text-fg-subtle">
               Sample data for illustration.
             </p>
           </div>
@@ -353,22 +370,7 @@ export function LandingPage({ isAuthed, theme, setTheme }) {
             ))}
           </div>
         </section>
-        {/* Product tour */}
-        <section className="px-4 pb-20 sm:px-6">
-          <SectionHeading
-            eyebrow="See it in action"
-            title="Minutes of work, done in seconds"
-            text="A quick look at how LedgerFlow handles the everyday tasks."
-          />
-          <div className="mt-12">
-            <Reveal>
-              <Showcase />
-            </Reveal>
-            <p className="mt-6 text-center text-xs text-fg-subtle">
-              Sample data for illustration.
-            </p>
-          </div>
-        </section>
+
         {/* How it works */}
         <section className="border-y border-border bg-surface/60 px-4 py-20 backdrop-blur-sm sm:px-6">
           <SectionHeading
@@ -396,7 +398,11 @@ export function LandingPage({ isAuthed, theme, setTheme }) {
 
         {/* FAQ */}
         <section id="faq" className="scroll-mt-20 px-4 pb-20 sm:px-6">
-          <SectionHeading eyebrow="FAQ" title="Questions, answered" />
+          <SectionHeading
+            eyebrow="FAQ"
+            title="Questions, answered"
+            text="Can't find what you're looking for? You'll be able to reach support from inside the app."
+          />
           <div className="mx-auto mt-10 max-w-2xl divide-y divide-border rounded-xl border border-border bg-surface">
             {FAQ.map((f) => (
               <details key={f.q} className="group px-5 py-4">

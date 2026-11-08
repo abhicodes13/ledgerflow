@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
   FileText,
   ShieldCheck,
   Sparkles,
+  Wallet,
 } from "lucide-react";
 import { Badge } from "../ui";
 import { cn } from "../../lib/cn";
@@ -309,6 +310,94 @@ function TrackScene() {
   );
 }
 
+/* ───────── Slide 4: get paid ───────── */
+
+const PAID_TIMES = [1800];
+
+function PaidScene() {
+  const step = useSequence(PAID_TIMES);
+  const paid = step >= 1;
+  const outstanding = useAnimatedNumber(paid ? 2400 : 3250, 900);
+  const collected = useAnimatedNumber(paid ? 9250 : 8400, 900);
+
+  const metrics = [
+    { l: "Outstanding", v: outstanding, c: "text-fg" },
+    { l: "Collected", v: collected, c: "text-success" },
+  ];
+  const rows = [
+    {
+      n: "INV-014",
+      c: "Northwind Studio",
+      a: "$2,400.00",
+      tone: "danger",
+      s: "Overdue",
+    },
+    {
+      n: "INV-015",
+      c: "Bluebird Co.",
+      a: "$850.00",
+      tone: paid ? "success" : "warning",
+      s: paid ? "Paid" : "Pending",
+    },
+    {
+      n: "INV-013",
+      c: "Acme Corp",
+      a: "$1,200.00",
+      tone: "success",
+      s: "Paid",
+    },
+  ];
+
+  return (
+    <Frame title="Overview">
+      <div className="flex h-full flex-col text-sm">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {metrics.map((m) => (
+            <div key={m.l} className="rounded-xl bg-surface-2 p-4">
+              <p className="text-xs font-medium text-fg-muted">{m.l}</p>
+              <p className={cn("num mt-1 text-2xl font-semibold", m.c)}>
+                {money(m.v)}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <ul className="mt-3 divide-y divide-border overflow-hidden rounded-xl border border-border">
+          {rows.map((r) => (
+            <li
+              key={r.n}
+              className="flex items-center justify-between gap-3 px-4 py-3"
+            >
+              <div className="min-w-0">
+                <p className="num font-medium">{r.n}</p>
+                <p className="truncate text-xs text-fg-muted">{r.c}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge key={r.s} tone={r.tone} className="animate-fadeIn">
+                  {r.s}
+                </Badge>
+                <span className="num w-24 text-right font-semibold">{r.a}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        {paid && (
+          <div className="absolute bottom-5 right-5 flex animate-fadeIn items-center gap-2 rounded-xl border border-border bg-surface px-3.5 py-2.5 shadow-[var(--shadow-pop)]">
+            <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
+            <div>
+              <p className="text-xs font-semibold">Marked as paid</p>
+              <p className="num text-xs text-fg-muted">
+                Bluebird Co. · $850.00
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </Frame>
+  );
+}
+
 /* ───────── The slideshow ───────── */
 
 const SLIDES = [
@@ -333,21 +422,50 @@ const SLIDES = [
     text: "Unpaid invoices are sorted by urgency, with overdue ones flagged and totaled.",
     Scene: TrackScene,
   },
+  {
+    id: "paid",
+    icon: Wallet,
+    title: "Get paid, see it instantly",
+    text: "Mark an invoice as paid and your balances update right away.",
+    Scene: PaidScene,
+  },
 ];
 
 export function Showcase() {
+  const rootRef = useRef(null);
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
+  // Don't start until the demo is actually on screen
+  const [started, setStarted] = useState(
+    () => typeof IntersectionObserver === "undefined",
+  );
   const { Scene } = SLIDES[active];
   const next = () => setActive((a) => (a + 1) % SLIDES.length);
 
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || started) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setStarted(true);
+          io.disconnect();
+        }
+      },
+      { threshold: 0.35 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [started]);
+
   return (
     <div
+      ref={rootRef}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
-      className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[22rem_1fr] lg:items-center"
+      className="mx-auto grid max-w-6xl gap-8 text-left lg:grid-cols-[22rem_1fr] lg:items-center"
     >
       <div
         role="tablist"
@@ -396,7 +514,7 @@ export function Showcase() {
                   {s.text}
                 </p>
               )}
-              {selected && (
+              {selected && started && (
                 <span className="absolute inset-x-0 bottom-0 h-0.5 bg-border">
                   <span
                     key={active}
@@ -421,11 +539,13 @@ export function Showcase() {
         />
         <div
           role="tabpanel"
-          className="relative h-[25rem] overflow-hidden rounded-2xl border border-border bg-surface shadow-[var(--shadow-pop)]"
+          className="relative h-[24rem] overflow-hidden rounded-2xl border border-border bg-surface shadow-[var(--shadow-pop)] sm:h-[25rem]"
         >
-          <div key={active} className="h-full animate-fadeIn">
-            <Scene />
-          </div>
+          {started && (
+            <div key={active} className="h-full animate-fadeIn">
+              <Scene />
+            </div>
+          )}
         </div>
       </div>
     </div>

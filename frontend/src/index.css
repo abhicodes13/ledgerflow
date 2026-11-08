@@ -190,7 +190,7 @@
   position: absolute;
   border-radius: 9999px;
   filter: blur(90px);
-  opacity: 0.5;
+  opacity: 0.4;
   will-change: transform;
 }
 .dark .aurora-blob {

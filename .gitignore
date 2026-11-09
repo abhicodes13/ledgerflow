@@ -27,4 +27,4 @@ dist/
 *.tfvars
 
 .env
-backup_before_v2.sql
+backup_before_v2.sqlbackup_*.sql

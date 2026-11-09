@@ -52,35 +52,3 @@ export function invoiceState(inv) {
   const d = daysUntilDue(inv?.due_date);
   return d !== null && d < 0 ? "overdue" : "pending";
 }
-
-// Suggests the next invoice number from existing ones, e.g. INV-003 -> INV-004.
-// (Goes away once the server assigns numbers; see item 4.)
-export function nextInvoiceNumber(invoices = []) {
-  const groups = new Map();
-  for (const inv of invoices) {
-    const m = /^(.*?)(\d+)\s*$/.exec(String(inv?.invoice_number ?? "").trim());
-    if (!m) continue;
-    const key = m[1].toLowerCase();
-    const g = groups.get(key) ?? { prefix: m[1], count: 0, max: 0, width: 0 };
-    g.count += 1;
-    g.max = Math.max(g.max, Number(m[2]));
-    g.width = Math.max(g.width, m[2].length);
-    groups.set(key, g);
-  }
-  if (groups.size === 0) return "INV-0001";
-
-  const best = [...groups.values()].reduce((a, b) =>
-    b.count > a.count ? b : a,
-  );
-  const taken = new Set(
-    invoices.map((i) => String(i?.invoice_number ?? "").toLowerCase()),
-  );
-
-  let n = best.max + 1;
-  let candidate;
-  do {
-    candidate = best.prefix + String(n).padStart(best.width, "0");
-    n += 1;
-  } while (taken.has(candidate.toLowerCase()));
-  return candidate;
-}

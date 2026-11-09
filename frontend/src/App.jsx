@@ -155,6 +155,8 @@ function App() {
       });
       if (!res.ok)
         throw new Error(await readError(res, "Couldn't save the invoice."));
+      const created = await res.json().catch(() => null);
+      const assigned = created?.invoice?.invoice_number;
 
       data.setSelectedClientId("");
       data.setInvoiceNumber("");
@@ -162,7 +164,9 @@ function App() {
       data.setItems([{ description: "", quantity: 1, price: "" }]);
       data.fetchMetrics();
       data.fetchInvoicesList();
-      toast.success("Invoice created");
+      toast.success(
+        assigned ? `"Invoice {assigned} created` : "Invoice created",
+      );
       return true;
     } catch (err) {
       toast.error(err.message);

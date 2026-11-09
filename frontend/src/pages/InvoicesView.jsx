@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Copy,
+  Download,
   FileText,
   Mail,
   Plus,
@@ -26,8 +27,8 @@ import {
   formatDate,
   invoiceAmountCents,
   invoiceState,
-  nextInvoiceNumber,
 } from "../lib/format";
+import { fetchPdfBlob, saveBlob } from "../lib/api";
 import { cn } from "../lib/cn";
 
 const FILTERS = [
@@ -52,6 +53,7 @@ export function InvoicesView({
   const [submitting, setSubmitting] = useState(false);
   const [selected, setSelected] = useState(null);
   const [settling, setSettling] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   // Line items for the open invoice. Loading = detail.id !== selected.id
   const [detail, setDetail] = useState({ id: null, items: [] });
 
@@ -71,7 +73,7 @@ export function InvoicesView({
       ? filteredInvoices
       : filteredInvoices.filter((inv) => invoiceState(inv) === filter);
 
-  // Try to load real line items. If the endpoint doesn't exist yet,
+  // Try to load real line items. If the endpoint doesn't exist,
   // quietly fall back to a single summary row.
   useEffect(() => {
     if (!selected) return;
@@ -117,9 +119,9 @@ export function InvoicesView({
     ) * 100,
   );
 
+  // Invoice number is optional: the server assigns one when it's empty
   const formValid =
     data.selectedClientId &&
-    data.invoiceNumber?.trim() &&
     data.dueDate &&
     formItems.every(
       (i) =>
@@ -127,14 +129,6 @@ export function InvoicesView({
         Number(i.quantity) > 0 &&
         parseFloat(i.price) >= 0,
     );
-
-  // Open the modal with a suggested number (only if the field is empty)
-  const openCreate = () => {
-    if (!data.invoiceNumber?.trim()) {
-      data.setInvoiceNumber(nextInvoiceNumber(data.invoicesList));
-    }
-    setCreateOpen(true);
-  };
 
   const submitInvoice = async (e) => {
     e.preventDefault();
@@ -152,6 +146,25 @@ export function InvoicesView({
       toast.success("Link copied (preview: the checkout page isn't built yet)");
     } catch {
       toast.error("Couldn't copy to the clipboard");
+    }
+  };
+
+  const downloadPdf = async (inv) => {
+    setDownloading(true);
+    try {
+      const blob = await fetchPdfBlob(
+        `${data.API_BASE}/api/invoices/${inv.id}/pdf`,
+        data.token,
+      );
+      const safe = String(inv.invoice_number || inv.id).replace(
+        /[^\w.-]+/g,
+        "_",
+      );
+      saveBlob(blob, `${safe}.pdf`);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -189,7 +202,7 @@ export function InvoicesView({
         title="Invoices"
         description="Create, track, and collect payment on your invoices."
         actions={
-          <Button onClick={openCreate}>
+          <Button onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4" aria-hidden />
             New invoice
           </Button>
@@ -294,7 +307,9 @@ export function InvoicesView({
                         : "No due date"}
                     </p>
                     <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-4">
-                      <StatusBadge invoice={inv} />
+                      <div className="flex sm:w-24 sm:justify-end">
+                        <StatusBadge invoice={inv} />
+                      </div>
                       <span className="num w-24 text-right text-sm font-semibold text-fg">
                         {formatCurrency(invoiceAmountCents(inv))}
                       </span>
@@ -366,12 +381,11 @@ export function InvoicesView({
               ))}
             </Select>
             <Input
-              label="Invoice number"
-              hint="Suggested from your last invoice"
+              label="Invoice number (optional)"
+              hint="Leave blank and we'll number it for you."
               value={data.invoiceNumber || ""}
               onChange={(e) => data.setInvoiceNumber(e.target.value)}
-              placeholder="INV-0001"
-              required
+              placeholder="Assigned automatically"
             />
             <Input
               label="Due date"
@@ -465,6 +479,14 @@ export function InvoicesView({
         footer={
           selected && (
             <>
+              <Button
+                variant="secondary"
+                onClick={() => downloadPdf(selected)}
+                loading={downloading}
+              >
+                <Download className="h-4 w-4" aria-hidden />
+                Download PDF
+              </Button>
               <Button variant="secondary" onClick={() => copyLink(selected)}>
                 <Copy className="h-4 w-4" aria-hidden />
                 Copy link

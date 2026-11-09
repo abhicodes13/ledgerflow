@@ -26,3 +26,25 @@ export async function readError(res, fallback) {
   const data = await res.json().catch(() => null);
   return errorMessage(data, fallback);
 }
+
+// Fetches a protected file (the PDF route needs the auth header, so a plain link won't work)
+export async function fetchPdfBlob(url, token) {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok)
+    throw new Error(await readError(res, "Couldn't download the PDF."));
+  return res.blob();
+}
+
+// Triggers a browser download for a blob
+export function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

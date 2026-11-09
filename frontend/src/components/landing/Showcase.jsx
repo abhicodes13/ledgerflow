@@ -412,7 +412,7 @@ const SLIDES = [
     id: "invoice",
     icon: FileText,
     title: "Build invoices in seconds",
-    text: "Add line items and watch the total update as you type. The next invoice number is suggested for you.",
+    text: "Add line items and watch the total update as you type. Invoice numbers are assigned automatically..",
     Scene: InvoiceScene,
   },
   {

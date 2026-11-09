@@ -72,7 +72,7 @@ const SOLUTIONS = [
   {
     icon: FileText,
     title: "Invoices in under a minute",
-    text: "Add line items, watch the total update live, and get the next invoice number suggested for you.",
+    text: "Add line items, watch the total update live, and let LedgerFlow number the invoice for you. Download it as a PDF when you're done.",
   },
   {
     icon: Users,
@@ -128,7 +128,7 @@ const FAQ = [
   },
   {
     q: "Can I email invoices or accept card payments?",
-    a: "Not yet. Emailing invoices and online card payments are coming. Today you create invoices, track their status, and mark them paid inside LedgerFlow.",
+    a: "Not yet. Emailing invoices and online card payments are coming. Today you create invoices, download them as PDFs, track their status, and mark them paid inside LedgerFlow.",
   },
   {
     q: "Can I switch between monthly and yearly billing?",

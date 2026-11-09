@@ -1,43 +1,50 @@
 const pool = require("./db");
 
+// Must run AFTER authenticateToken (it needs req.user).
+// Billing status is read from the database on every request, never from the
+// JWT, so a cancelled or failed payment takes effect immediately.
 async function checkSubscription(req, res, next) {
-  // Extract userId safely from the req.user payload injected by your JWT authMiddleware
-  const activeUserId = req.user.userId;
-
   try {
-    // Check our database record for this user's active billing status
-    const result = await pool.query(
-      "SELECT billing_status, subscription_tier FROM users WHERE id = $1",
-      [activeUserId],
-    );
+    const userId = Number(req.user?.userId);
+    if (!Number.isInteger(userId) || userId < 1) {
+      return res.status(401).json({
+        success: false,
+        error: "Authentication required.",
+        code: "TOKEN_INVALID",
+      });
+    }
 
+    const result = await pool.query(
+      "SELECT billing_status, subscription_tier, current_period_end FROM users WHERE id = $1",
+      [userId],
+    );
     const user = result.rows[0];
 
+    // A valid token for a deleted account
     if (!user) {
-      return res
-        .status(404)
-        .json({ error: "User identity record not located." });
+      return res.status(401).json({
+        success: false,
+        error: "Account not found.",
+        code: "ACCOUNT_NOT_FOUND",
+      });
     }
 
-    // Allow entry if billing_status is 'active' or if you want to support a 'trialing' stage
-    if (
-      user.billing_status === "active" ||
-      user.billing_status === "trialing"
-    ) {
-      return next(); // 🔓 Access validated! Move along to your service handlers.
+    if (user.billing_status === "active") {
+      req.billing = user; // available to route handlers if they need it
+      return next();
     }
 
-    // 🔒 Halt request if payment is inactive or overdue
     return res.status(403).json({
-      error: "Subscription Required",
-      message:
-        "Your current billing profile is inactive or past due. Please reactivate access via the billing gateway.",
+      success: false,
+      error: "An active subscription is required to use this feature.",
+      code: "SUBSCRIPTION_REQUIRED",
+      billing_status: user.billing_status,
     });
   } catch (error) {
-    console.error("🚨 [BILLING GATE FAILURE]:", error);
+    console.error("Subscription check failed:", error);
     return res
       .status(500)
-      .json({ error: "Internal validation subsystem error." });
+      .json({ success: false, error: "Something went wrong" });
   }
 }
 

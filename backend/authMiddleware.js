@@ -1,36 +1,37 @@
 const jwt = require("jsonwebtoken");
-const JWT_SECRET = "LEDGERFLOW_MASTER_SECURE_TOKEN_SALT_999";
 
-// 🚨 THE SECURITY GUARDMIDDLEWARE: Decodes incoming network passport keys
+// Must be the SAME value authService.js uses to sign tokens (both read .env)
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
+  throw new Error("JWT_SECRET must be set in .env (at least 32 characters)");
+}
+
+// Verifies the "Authorization: Bearer <token>" header and puts the token's
+// payload on req.user (for example { userId, username }).
 function authenticateToken(req, res, next) {
-  // Extract the Authorization header capsule from the incoming flight request
-  const authHeader = req.headers["authorization"];
+  const header = req.headers["authorization"] || "";
+  const [scheme, token] = header.split(" ");
 
-  // Header format is traditionally: "Bearer TOKEN_STRING"
-  const token = authHeader && authHeader.split(" ")[1];
-
-  // If the token string is completely missing, lock the door immediately
-  if (!token) {
+  if (scheme !== "Bearer" || !token) {
     return res.status(401).json({
       success: false,
-      error: "Access Denied: Missing digital token session passport.",
+      error: "Authentication required.",
+      code: "TOKEN_MISSING",
     });
   }
 
   try {
-    // Crack open and verify the cryptographic signature using your secret salt
-    const verifiedPayload = jwt.verify(token, JWT_SECRET);
-
-    // ⚡ THE ARCHITECTURE CRUX: Inject the decrypted userId straight into the request object!
-    req.user = verifiedPayload;
-
-    // Passport verified! Wave them through the security gate to the next route function
-    next();
+    // Only accept the algorithm we sign with
+    req.user = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
+    return next();
   } catch (error) {
-    console.error("❌ JWT Verification Security Breach:", error.message);
-    return res.status(403).json({
+    const expired = error.name === "TokenExpiredError";
+    return res.status(401).json({
       success: false,
-      error: "Access Forbidden: Session token is expired or tampered with.",
+      error: expired
+        ? "Session expired. Please log in again."
+        : "Invalid session. Please log in again.",
+      code: expired ? "TOKEN_EXPIRED" : "TOKEN_INVALID",
     });
   }
 }

@@ -1,20 +1,26 @@
 services:
   database:
-    image: postgres:16-alpine # 1. Switched to Alpine (An ultra-lightweight version)
-    container_name: ledgerflow_postgres
+    image: postgres:16-alpine
+    container_name: ledgerflow_postgres_v2
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password123
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env next to this file}
       POSTGRES_DB: ledgerflow_db
     ports:
       - "5433:5432"
     deploy:
       resources:
         limits:
-          cpus: "0.5" # 2. Limit to half of one CPU core max
-          memory: 256M # 3. Cap memory usage at just 256 Megabytes!
+          cpus: "0.5"
+          memory: 256M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d ledgerflow_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata_v2:/var/lib/postgresql/data
+      - ./backend/database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
 volumes:
-  pgdata:
+  pgdata_v2:

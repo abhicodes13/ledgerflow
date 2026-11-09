@@ -1,8 +1,69 @@
-const pool = require("./db"); // Import our raw pool to manage the transaction loop
+const pool = require("./db");
 const invoiceRepository = require("./invoiceRepository");
+const { AppError } = require("./errors");
+
+const VALID_STATUSES = ["pending", "paid", "void"];
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_ITEMS = 50;
+// Keeps the SQL SUM inside the INT range (50 items * 20,000,000 cents = 1e9)
+const MAX_LINE_CENTS = 20_000_000;
+
+function parseItems(items) {
+  if (!Array.isArray(items) || items.length === 0 || items.length > MAX_ITEMS) {
+    throw new AppError(`An invoice needs 1 to ${MAX_ITEMS} line items`, 400);
+  }
+  return items.map((item) => {
+    const description =
+      typeof item?.description === "string" ? item.description.trim() : "";
+    const quantity = Number(item?.quantity);
+    const price = Number(item?.price);
+
+    if (!description || description.length > 255) {
+      throw new AppError(
+        "Each line item needs a description (max 255 characters)",
+        400,
+      );
+    }
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      throw new AppError("Quantity must be a whole number of at least 1", 400);
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      throw new AppError("Price must be a number of 0 or more", 400);
+    }
+    const cents = Math.round(price * 100);
+    if (Math.abs(price * 100 - cents) > 1e-6) {
+      throw new AppError("Price can have at most 2 decimal places", 400);
+    }
+    if (quantity * cents > MAX_LINE_CENTS) {
+      throw new AppError("Line item total is too large", 400);
+    }
+    return { description, quantity, unitAmountCents: cents };
+  });
+}
+
+// Turns known Postgres error codes into friendly errors
+function translateDbError(error) {
+  if (error.code === "23505") {
+    return new AppError(
+      "That invoice number is already in use",
+      409,
+      "DUPLICATE_INVOICE_NUMBER",
+    );
+  }
+  if (error.code === "23503") {
+    return new AppError("Client not found", 404, "CLIENT_NOT_FOUND");
+  }
+  if (error.code === "23514") {
+    return new AppError("Invoice data is invalid", 400);
+  }
+  if (error.code === "22007" || error.code === "22008") {
+    return new AppError("Due date is not a valid date", 400);
+  }
+  return error;
+}
 
 const invoiceService = {
-  // ⚡ UPDATED STAGE 3: Packs parent entries and multi-row items into an atomic multi-tenant transaction
+  // invoiceNumber is optional: if empty, the next number for this user is generated.
   async createFullInvoice(
     activeUserId,
     clientId,
@@ -10,99 +71,90 @@ const invoiceService = {
     dueDate,
     items,
   ) {
-    // 1. Borrow a clean, dedicated network wire from our connection pool
-    const client = await pool.connect();
+    const cleanClientId = Number(clientId);
+    let cleanNumber =
+      typeof invoiceNumber === "string" ? invoiceNumber.trim() : "";
 
+    if (!Number.isInteger(cleanClientId) || cleanClientId < 1) {
+      throw new AppError("A valid client is required", 400);
+    }
+    if (cleanNumber.length > 50) {
+      throw new AppError("Invoice number is too long (max 50 characters)", 400);
+    }
+    if (typeof dueDate !== "string" || !DATE_RE.test(dueDate)) {
+      throw new AppError("Due date must look like 2026-12-31", 400);
+    }
+    const cleanItems = parseItems(items);
+
+    const db = await pool.connect();
     try {
-      // 2. Start the safety blanket: Begin the SQL Transaction
-      await client.query("BEGIN");
+      await db.query("BEGIN");
 
-      // 3. Step 1: Save the invoice container row including the new user_id column lock
-      const queryTextInvoice = ` 
-                INSERT INTO invoices (user_id, client_id, invoice_number, due_date, status) 
-                VALUES ($1, $2, $3, $4, 'pending') 
-                RETURNING * 
-            `;
-      const invoiceResult = await client.query(queryTextInvoice, [
-        activeUserId, // ◄── Master Multi-Tenant Lock!
-        clientId,
-        invoiceNumber,
-        dueDate,
-      ]);
-      const [newInvoice] = invoiceResult.rows;
-
-      // 4. Step 2: Loop through every single line item and save them
-      const savedItems = [];
-      for (const item of items) {
-        const queryTextItem = ` 
-                    INSERT INTO invoice_items (invoice_id, description, quantity, unit_amount_cents) 
-                    VALUES ($1, $2, $3, $4) 
-                    RETURNING * 
-                `;
-        // Calculate whole integer cents to avoid decimal rounding errors
-        const amountInCents = Math.round(item.price * 100);
-        const itemResult = await client.query(queryTextItem, [
-          newInvoice.id, // Links this item directly to our new invoice container id!
-          item.description,
-          item.quantity,
-          amountInCents,
-        ]);
-        savedItems.push(itemResult.rows[0]);
+      // Atomic per-user counter: the UPDATE locks the user's row, so two
+      // simultaneous requests can never receive the same number.
+      if (!cleanNumber) {
+        const seq = await db.query(
+          "UPDATE users SET invoice_seq = invoice_seq + 1 WHERE id = $1 RETURNING invoice_seq",
+          [activeUserId],
+        );
+        cleanNumber = `INV-${String(seq.rows[0].invoice_seq).padStart(4, "0")}`;
       }
 
-      // 5. SUCCESS: If we reached this line without an error, save everything permanently!
-      await client.query("COMMIT");
-
-      // Return the stitched-together document data object
-      return {
-        ...newInvoice,
-        items: savedItems,
-      };
+      const invoice = await invoiceRepository.createInvoice(
+        activeUserId,
+        cleanClientId,
+        cleanNumber,
+        dueDate,
+        db,
+      );
+      const savedItems = [];
+      for (const item of cleanItems) {
+        savedItems.push(
+          await invoiceRepository.createItem(
+            invoice.id,
+            item.description,
+            item.quantity,
+            item.unitAmountCents,
+            db,
+          ),
+        );
+      }
+      await db.query("COMMIT");
+      return { ...invoice, items: savedItems };
     } catch (error) {
-      // 6. FAILURE: If anything broke, erase all changes made during this block immediately!
-      await client.query("ROLLBACK");
-      console.error(
-        "❌ INVOICE TRANSACTION FAILED - ROLLED BACK:",
-        error.message,
-      );
-      throw error;
+      await db.query("ROLLBACK").catch(() => {});
+      throw translateDbError(error);
     } finally {
-      // 7. CRUCIAL: Always hand the network wire back to the pool so other users can use it
-      client.release();
+      db.release();
     }
   },
 
-  // ⚡ UPDATED STAGE 3: Marks an invoice as PAID only if it belongs to the requesting tenant
   async settleInvoiceBalance(invoiceId, activeUserId) {
-    if (!invoiceId || !activeUserId) {
-      throw new Error("Missing required transaction processing variables");
+    const id = Number(invoiceId);
+    if (!Number.isInteger(id) || id < 1 || !activeUserId) {
+      throw new AppError("A valid invoice is required", 400);
     }
+    const paid = await invoiceRepository.markPaid(id, activeUserId);
+    if (paid) return paid;
 
-    // SECURITY CHECK: Verify that the invoice belongs to this user before updating it
-    const existingInvoice = await invoiceRepository.findById(invoiceId);
-    if (!existingInvoice) {
-      throw new Error(
-        "Target transactional record not found inside database pools.",
-      );
-    }
-    if (existingInvoice.user_id !== activeUserId) {
-      throw new Error(
-        "Access Forbidden: You do not possess structural ownership permissions for this record.",
-      );
-    }
-
-    const updatedInvoice = await invoiceRepository.updateStatus(
-      invoiceId,
-      "paid",
-    );
-    return updatedInvoice;
+    // Nothing updated: either it isn't theirs / doesn't exist, or it isn't pending
+    const existing = await invoiceRepository.findById(id, activeUserId);
+    if (!existing) throw new AppError("Invoice not found", 404);
+    throw new AppError(`Invoice is already ${existing.status}`, 409);
   },
 
-  // ⚡ UPDATED STAGE 3: Pass activeUserId down to pull only this user's rows
-  async getAllInvoices(activeUserId) {
-    if (!activeUserId)
-      throw new Error("Authentication credential token required.");
-    return await invoiceRepository.findAll(activeUserId);
+  async getAllInvoices(activeUserId, filters = {}) {
+    if (!activeUserId) throw new AppError("Authentication required", 401);
+    if (filters.status && !VALID_STATUSES.includes(filters.status)) {
+      throw new AppError("Invalid status filter", 400);
+    }
+    if (filters.dueBefore && !DATE_RE.test(filters.dueBefore)) {
+      throw new AppError("due_before must look like 2026-12-31", 400);
+    }
+    if (filters.clientId !== undefined && !Number.isInteger(filters.clientId)) {
+      throw new AppError("Invalid client_id", 400);
+    }
+    return invoiceRepository.findAll(activeUserId, filters);
   },
 };
 

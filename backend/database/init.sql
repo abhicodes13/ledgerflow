@@ -8,6 +8,7 @@ CREATE TABLE users (
         CHECK (subscription_tier IN ('unpaid', 'MONTHLY', 'YEARLY')),
     billing_status VARCHAR(50) NOT NULL DEFAULT 'inactive'
         CHECK (billing_status IN ('inactive', 'active', 'past_due')),
+    invoice_seq INT NOT NULL DEFAULT 0,
     stripe_customer_id VARCHAR(255) UNIQUE,
     stripe_subscription_id VARCHAR(255) UNIQUE,
     current_period_end TIMESTAMPTZ,

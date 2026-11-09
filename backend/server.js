@@ -14,9 +14,13 @@ const checkSubscription = require("./subscriptionMiddleware");
 const paymentRouter = require("./payment");
 const { GoogleGenAI } = require("@google/genai");
 const cors = require("cors");
+const rateLimit = require("express-rate-limit"); // npm i express-rate-limit
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+app.use("/api/auth", authLimiter);
 
 // 🛡️ SECURITY TWEAK: Dynamic Environment Origin Matrix
 const allowedOrigins = [
@@ -70,33 +74,25 @@ app.get("/api/health", async (req, res) => {
 // SECURITY PORTAL ENDPOINTS
 // =========================================================================
 app.post("/api/auth/register", async (req, res) => {
-  const { username, password } = req.body;
-
-  if (!username || !password) {
-    return res.status(400).json({
-      success: false,
-      error: "Credentials fields cannot be left blank.",
-    });
-  }
-
+  const { username, email, password } = req.body;
   try {
-    const newUser = await authService.register(username, password);
+    const newUser = await authService.register(username, email, password);
     return res.status(201).json({ success: true, user: newUser });
   } catch (error) {
-    return res.status(400).json({ success: false, error: error.message });
+    if (error instanceof authService.AuthError) {
+      return res
+        .status(error.status)
+        .json({ success: false, error: error.message });
+    }
+    console.error("register failed:", error);
+    return res
+      .status(500)
+      .json({ success: false, error: "Something went wrong" });
   }
 });
 
 app.post("/api/auth/login", async (req, res) => {
   const { username, password } = req.body;
-
-  if (!username || !password) {
-    return res.status(400).json({
-      success: false,
-      error: "Credentials fields cannot be left blank.",
-    });
-  }
-
   try {
     const session = await authService.login(username, password);
     return res.json({
@@ -105,7 +101,15 @@ app.post("/api/auth/login", async (req, res) => {
       user: session.user,
     });
   } catch (error) {
-    return res.status(401).json({ success: false, error: error.message });
+    if (error instanceof authService.AuthError) {
+      return res
+        .status(error.status)
+        .json({ success: false, error: error.message });
+    }
+    console.error("login failed:", error);
+    return res
+      .status(500)
+      .json({ success: false, error: "Something went wrong" });
   }
 });
 

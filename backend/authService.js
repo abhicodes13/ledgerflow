@@ -2,65 +2,93 @@ const pool = require("./db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-const JWT_SECRET = "LEDGERFLOW_MASTER_SECURE_TOKEN_SALT_999";
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
+  throw new Error("JWT_SECRET must be set in .env (at least 32 characters)");
+}
+
+// Errors we deliberately show to users; anything else becomes a generic 500
+class AuthError extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const EMAIL_RE = /^\S+@\S+\.\S+$/;
+// Compared against when the username doesn't exist, so timing doesn't reveal it
+const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 10);
 
 const authService = {
-  // 1. REGISTRATION GATEKEEPER
-  async register(username, rawPassword) {
-    if (!username || !rawPassword) {
-      throw new Error("Username and password are required credentials");
+  AuthError,
+
+  async register(username, email, password) {
+    const cleanUser = typeof username === "string" ? username.trim() : "";
+    const cleanEmail =
+      typeof email === "string" ? email.trim().toLowerCase() : "";
+
+    if (cleanUser.length < 3 || cleanUser.length > 100) {
+      throw new AuthError("Username must be 3 to 100 characters");
+    }
+    if (!EMAIL_RE.test(cleanEmail) || cleanEmail.length > 255) {
+      throw new AuthError("A valid email is required");
+    }
+    if (
+      typeof password !== "string" ||
+      password.length < 8 ||
+      Buffer.byteLength(password) > 72
+    ) {
+      throw new AuthError("Password must be 8 to 72 characters");
     }
 
-    const cleanUser = username.trim();
-    const cleanPass = rawPassword.trim();
-
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(cleanPass, salt);
-
-    const queryText = `INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id, username, created_at;`;
+    const passwordHash = await bcrypt.hash(password, 10); // note: password NOT trimmed
 
     try {
-      const result = await pool.query(queryText, [cleanUser, passwordHash]);
+      const result = await pool.query(
+        `INSERT INTO users (username, email, password_hash)
+         VALUES ($1, $2, $3)
+         RETURNING id, username, email, created_at;`,
+        [cleanUser, cleanEmail, passwordHash],
+      );
       return result.rows[0];
     } catch (error) {
       if (error.code === "23505") {
-        throw new Error("This username is already occupied");
+        // Same message for username or email, so emails can't be probed
+        throw new AuthError("That username or email is already in use", 409);
       }
       throw error;
     }
   },
 
-  // 2. LOGIN GATEKEEPER
-  async login(username, rawPassword) {
-    if (!username || !rawPassword) {
-      throw new Error("Username and password are required credentials");
+  async login(username, password) {
+    if (typeof username !== "string" || typeof password !== "string") {
+      throw new AuthError("Invalid username or password", 401);
     }
 
-    const cleanUser = username.trim();
-    const cleanPass = rawPassword.trim();
-
     const result = await pool.query(
-      "SELECT * FROM users WHERE username = $1;",
-      [cleanUser],
+      "SELECT id, username, email, password_hash FROM users WHERE username = $1;",
+      [username.trim()],
     );
     const user = result.rows[0];
 
-    if (!user) {
-      throw new Error("Invalid username provided");
-    }
-
-    const isMatch = await bcrypt.compare(cleanPass, user.password_hash);
-    if (!isMatch) {
-      throw new Error("Invalid password");
+    const isMatch = await bcrypt.compare(
+      password,
+      user ? user.password_hash : DUMMY_HASH,
+    );
+    if (!user || !isMatch) {
+      throw new AuthError("Invalid username or password", 401);
     }
 
     const token = jwt.sign(
       { userId: user.id, username: user.username },
       JWT_SECRET,
-      { expiresIn: "24h" },
+      { expiresIn: "24h", algorithm: "HS256" },
     );
 
-    return { token, user: { id: user.id, username: user.username } };
+    return {
+      token,
+      user: { id: user.id, username: user.username, email: user.email },
+    };
   },
 };
 

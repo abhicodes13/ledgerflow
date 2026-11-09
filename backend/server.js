@@ -269,7 +269,7 @@ app.get("/api/invoices/:id/pdf", authenticateToken, async (req, res) => {
     }
 
     const invoiceResult = await pool.query(
-      `SELECT i.*, c.name AS client_name, c.email AS client_email
+      `SELECT i.*, c.name AS client_name, c.email AS client_email, c.phone_number AS client_phone
        FROM invoices i
        JOIN clients c ON c.id = i.client_id AND c.user_id = i.user_id
        WHERE i.id = $1 AND i.user_id = $2`,
@@ -283,8 +283,17 @@ app.get("/api/invoices/:id/pdf", authenticateToken, async (req, res) => {
       [invoiceId],
     );
 
+    const ownerResult = await pool.query(
+      "SELECT username, email FROM users WHERE id = $1",
+      [userId],
+    );
+    const owner = ownerResult.rows[0] || {};
+
     // The generator sets the PDF headers and streams the file
-    generateInvoicePdfStream(res, invoice, itemsResult.rows);
+    generateInvoicePdfStream(res, invoice, itemsResult.rows, {
+      name: owner.username,
+      email: owner.email,
+    });
   } catch (error) {
     if (!res.headersSent) return sendError(res, error, "pdf failed");
     res.end();

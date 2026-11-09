@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+
 import {
   ArrowRight,
   Bell,
@@ -250,6 +251,10 @@ function Pricing({ cta }) {
 }
 
 export function LandingPage({ isAuthed, theme, setTheme }) {
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (hash) document.querySelector(hash)?.scrollIntoView();
+  }, [hash]);
   const cta = isAuthed ? "/app" : "/login";
 
   return (

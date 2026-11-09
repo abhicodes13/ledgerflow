@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Navigate,
   Outlet,
@@ -24,6 +24,8 @@ import { SettingsView } from "./pages/SettingsView";
 import { invoiceState } from "./lib/format";
 import { tabToPath } from "./lib/routes";
 import { errorMessage, readError } from "./lib/api";
+import { UpgradeModal } from "./components/upgradeModal";
+import { API_ERROR_EVENT } from "./lib/apiGuard";
 
 function App() {
   const data = useLedgerFlowData();
@@ -52,6 +54,8 @@ function App() {
   const [chatLoading, setChatLoading] = useState(false);
   const chatBottomRef = useRef(null);
 
+  const [upgrade, setUpgrade] = useState({ open: false, status: null });
+
   const [chatMessages, setChatMessages] = useState([
     {
       type: "action_deck",
@@ -59,7 +63,20 @@ function App() {
       text: "Hi! I can add clients, draft invoices, and mark payments as received. Pick a shortcut below or just type what you need.",
     },
   ]);
-
+  // React to auth and billing failures from any API call
+  useEffect(() => {
+    const onApiError = (e) => {
+      const { status, code, billingStatus } = e.detail;
+      if (code === "SUBSCRIPTION_REQUIRED") {
+        setUpgrade({ open: true, status: billingStatus });
+      } else if (status === 401) {
+        data.handleLogout();
+        toast.error("Your session has ended. Please sign in again.");
+      }
+    };
+    window.addEventListener(API_ERROR_EVENT, onApiError);
+    return () => window.removeEventListener(API_ERROR_EVENT, onApiError);
+  });
   // Sign in / sign up
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -372,6 +389,15 @@ function App() {
       }
     >
       <Outlet />
+      <UpgradeModal
+        open={upgrade.open}
+        status={upgrade.status}
+        onClose={() => setUpgrade((u) => ({ ...u, open: false }))}
+        onViewPlans={() => {
+          setUpgrade((u) => ({ ...u, open: false }));
+          navigate({ pathname: "/", hash: "#pricing" });
+        }}
+      />
     </AppShell>
   );
 

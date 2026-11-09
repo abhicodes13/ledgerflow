@@ -22,6 +22,8 @@ export function AuthScreen({
   onToggleMode,
   username,
   setUsername,
+  email,
+  setEmail,
   password,
   setPassword,
   message,
@@ -97,6 +99,17 @@ export function AuthScreen({
               autoComplete="username"
               required
             />
+            {isRegistering && (
+              <Input
+                label="Email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                autoComplete="email"
+                required
+              />
+            )}
             <Input
               label="Password"
               type="password"

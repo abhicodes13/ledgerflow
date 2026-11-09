@@ -23,6 +23,7 @@ import { AutomationsView } from "./pages/AutomationsView";
 import { SettingsView } from "./pages/SettingsView";
 import { invoiceState } from "./lib/format";
 import { tabToPath } from "./lib/routes";
+import { errorMessage, readError } from "./lib/api";
 
 function App() {
   const data = useLedgerFlowData();
@@ -41,6 +42,7 @@ function App() {
   // Auth form state
   const [isRegistering, setIsRegistering] = useState(false);
   const [authUsername, setAuthUsername] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authMessage, setAuthMessage] = useState({ text: "", isError: false });
@@ -61,9 +63,9 @@ function App() {
   // Sign in / sign up
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
-    if (!authUsername || !authPassword) {
+    if (!authUsername || !authPassword || (isRegistering && !authEmail)) {
       setAuthMessage({
-        text: "Credentials fields cannot be left blank.",
+        text: "Please fill in all the fields.",
         isError: true,
       });
       return;
@@ -75,28 +77,34 @@ function App() {
       ? "/api/auth/register"
       : "/api/auth/login";
 
+    const body = { username: authUsername, password: authPassword };
+    if (isRegistering) body.email = authEmail.trim();
+
     try {
       const res = await fetch(`${data.API_BASE}${endpointPath}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: authUsername,
-          password: authPassword,
-        }),
+        body: JSON.stringify(body),
       });
-      const resData = await res.json();
+      const resData = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(
-          resData.error || "Security authentication gate rejected request.",
+          errorMessage(
+            resData,
+            isRegistering
+              ? "Couldn't create your account."
+              : "Couldn't sign you in.",
+          ),
         );
       }
 
       if (isRegistering) {
         setAuthMessage({
-          text: "Account profile created successfully! Switching to login view...",
+          text: "Account created! You can sign in now.",
           isError: false,
         });
         setAuthUsername("");
+        setAuthEmail("");
         setAuthPassword("");
         setIsRegistering(false);
       } else {
@@ -123,27 +131,31 @@ function App() {
   const handleInvoiceSubmitInternal = async (e) => {
     e.preventDefault();
     try {
+      const body = {
+        client_id: parseInt(data.selectedClientId, 10),
+        due_date: data.dueDate,
+        items: data.items.map((i) => ({
+          description: i.description,
+          quantity: parseInt(i.quantity, 10),
+          price: parseFloat(i.price),
+        })),
+      };
+      // The server assigns a number when none is sent
+      if (data.invoiceNumber?.trim()) {
+        body.invoice_number = data.invoiceNumber.trim();
+      }
+
       const res = await fetch(`${data.API_BASE}/api/invoices`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${data.token}`,
         },
-        body: JSON.stringify({
-          client_id: parseInt(data.selectedClientId, 10),
-          invoice_number: data.invoiceNumber,
-          due_date: data.dueDate,
-          items: data.items.map((i) => ({
-            description: i.description,
-            quantity: parseInt(i.quantity, 10),
-            price: parseFloat(i.price),
-          })),
-        }),
+        body: JSON.stringify(body),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Couldn't save the invoice.");
-      }
+      if (!res.ok)
+        throw new Error(await readError(res, "Couldn't save the invoice."));
+
       data.setSelectedClientId("");
       data.setInvoiceNumber("");
       data.setDueDate("");
@@ -173,10 +185,9 @@ function App() {
           email: data.clientEmail,
         }),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Couldn't save the client.");
-      }
+      if (!res.ok)
+        throw new Error(await readError(res, "Couldn't save the client."));
+
       data.setClientName("");
       data.setClientEmail("");
       data.fetchMetrics();
@@ -196,7 +207,11 @@ function App() {
         method: "PATCH",
         headers: { Authorization: `Bearer ${data.token}` },
       });
-      if (!res.ok) throw new Error("Couldn't mark the invoice as paid.");
+      if (!res.ok) {
+        throw new Error(
+          await readError(res, "Couldn't mark the invoice as paid."),
+        );
+      }
       data.fetchMetrics();
       data.fetchInvoicesList();
       toast.success("Invoice marked as paid");
@@ -227,8 +242,21 @@ function App() {
         },
         body: JSON.stringify({ message: userText }),
       });
-      const resData = await res.json();
-      if (resData.type === "approval_required") {
+      const resData = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            type: "text",
+            sender: "ai",
+            text: errorMessage(
+              resData,
+              "Sorry, I couldn't handle that request.",
+            ),
+          },
+        ]);
+      } else if (resData.type === "approval_required") {
         setChatMessages((prev) => [
           ...prev,
           {
@@ -251,7 +279,7 @@ function App() {
         {
           type: "text",
           sender: "ai",
-          text: `Error connecting to core AI route.`,
+          text: "Error connecting to core AI route.",
         },
       ]);
     } finally {
@@ -270,7 +298,12 @@ function App() {
         },
         body: JSON.stringify({ action, data: payload }),
       });
-      const resData = await res.json();
+      const resData = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // Keep the confirmation card so the user can retry or cancel
+        toast.error(errorMessage(resData, "Couldn't run that action."));
+        return;
+      }
       setChatMessages((prev) =>
         prev.map((msg, idx) =>
           idx === msgIndex
@@ -349,6 +382,8 @@ function App() {
       }}
       username={authUsername}
       setUsername={setAuthUsername}
+      email={authEmail}
+      setEmail={setAuthEmail}
       password={authPassword}
       setPassword={setAuthPassword}
       message={authMessage}

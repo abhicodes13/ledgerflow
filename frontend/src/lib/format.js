@@ -5,10 +5,34 @@ export function formatCurrency(cents) {
   }).format((Number(cents) || 0) / 100);
 }
 
-// Dates from Postgres are date-only; formatting in UTC avoids "off by one day".
+/* ───────── Dates ─────────
+   Due dates are calendar dates ("2026-12-31"), not moments in time.
+   We read the year-month-day directly, so time zones can't shift the day. */
+
+const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})/;
+
+// "2026-12-31" (or "2026-12-31T00:00:00Z") -> that calendar day as a UTC timestamp, or null
+function dateOnlyUTC(value) {
+  const m = DATE_RE.exec(String(value ?? ""));
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null;
+}
+
+// Today's calendar day in the user's own time zone, in the same form
+function todayUTC() {
+  const n = new Date();
+  return Date.UTC(n.getFullYear(), n.getMonth(), n.getDate());
+}
+
+// Negative = overdue, 0 = due today, null = no due date
+export function daysUntilDue(value) {
+  const due = dateOnlyUTC(value);
+  return due === null ? null : Math.round((due - todayUTC()) / 86_400_000);
+}
+
 export function formatDate(value) {
-  if (!value) return "N/A";
-  return new Date(value).toLocaleDateString("en-US", {
+  const t = dateOnlyUTC(value);
+  if (t === null) return "N/A";
+  return new Date(t).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -16,7 +40,6 @@ export function formatDate(value) {
   });
 }
 
-// Same three-field fallback your pages use today, in one place.
 export function invoiceAmountCents(inv) {
   return Number(
     inv?.amount_cents || inv?.total_amount_cents || inv?.amount || 0,
@@ -26,17 +49,12 @@ export function invoiceAmountCents(inv) {
 // Display-only: "paid" | "overdue" | "pending". Doesn't change any data.
 export function invoiceState(inv) {
   if (inv?.status === "paid") return "paid";
-  if (
-    inv?.due_date &&
-    new Date(inv.due_date) < new Date(new Date().toDateString())
-  ) {
-    return "overdue";
-  }
-  return "pending";
+  const d = daysUntilDue(inv?.due_date);
+  return d !== null && d < 0 ? "overdue" : "pending";
 }
 
 // Suggests the next invoice number from existing ones, e.g. INV-003 -> INV-004.
-// Uses the most common prefix (ties go to the newest invoice) and keeps zero padding.
+// (Goes away once the server assigns numbers; see item 4.)
 export function nextInvoiceNumber(invoices = []) {
   const groups = new Map();
   for (const inv of invoices) {

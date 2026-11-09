@@ -22,6 +22,7 @@ import {
   useToast,
 } from "../components/ui";
 import {
+  daysUntilDue,
   formatCurrency,
   formatDate,
   invoiceAmountCents,
@@ -58,15 +59,9 @@ const TONE_STYLES = {
   danger: "bg-danger-soft text-danger",
 };
 
-function daysFromToday(dateValue) {
-  if (!dateValue) return null;
-  const today = new Date(new Date().toDateString());
-  return Math.round((new Date(dateValue) - today) / 86_400_000);
-}
-
 function dueLabel(inv) {
   if (inv.status === "paid") return "Paid";
-  const d = daysFromToday(inv.due_date);
+  const d = daysUntilDue(inv.due_date);
   if (d === null) return "No due date";
   if (d < 0) return `Overdue by ${-d} day${d === -1 ? "" : "s"}`;
   if (d === 0) return "Due today";

@@ -905,6 +905,69 @@ app.post("/api/chat/confirm", authenticateToken, async (req, res) => {
       });
     }
 
+    // =========================================================================
+    // ✅ CODE SLOT C: AI WORKFLOW ROUTE -> SETTLING / MARKING AN INVOICE AS PAID
+    // =========================================================================
+    if (
+      action === "settle_invoice" ||
+      action === "mark_paid" ||
+      action === "settle"
+    ) {
+      // Flexibly map out potential variable keys sent by different AI token schemas
+      const invoiceNumber =
+        data.invoice_number || data.invoiceNumber || data.number;
+      const invoiceId = data.invoice_id || data.invoiceId || data.id;
+
+      if (!invoiceNumber && !invoiceId) {
+        throw new Error(
+          "You must specify a valid invoice tracking serial number or row ID parameter.",
+        );
+      }
+
+      let invoiceMatchQuery;
+
+      // Resolve database targeting by row unique integer ID or alpha-numeric unique serial number strings
+      if (invoiceId) {
+        invoiceMatchQuery = await client.query(
+          "SELECT id, invoice_number, status FROM invoices WHERE id = $1 AND user_id = $2 LIMIT 1",
+          [parseInt(invoiceId, 10), parseInt(userId, 10)],
+        );
+      } else {
+        invoiceMatchQuery = await client.query(
+          "SELECT id, invoice_number, status FROM invoices WHERE invoice_number = $1 AND user_id = $2 LIMIT 1",
+          [String(invoiceNumber).trim(), parseInt(userId, 10)],
+        );
+      }
+
+      if (invoiceMatchQuery.rows.length === 0) {
+        throw new Error(
+          `Target invoice record could not be located inside your active workspace rows.`,
+        );
+      }
+
+      const targetedInvoiceRow = invoiceMatchQuery.rows[0];
+
+      // If invoice row status parameters are already locked to paid, clear the commit without redundant overhead writes
+      if (targetedInvoiceRow.status === "paid") {
+        await client.query("COMMIT");
+        return res.status(200).json({
+          message: `Statement reference [${targetedInvoiceRow.invoice_number}] is already registered as fully settled inside your postgres logs.`,
+        });
+      }
+
+      // Execute primary status state update statement on target record row
+      await client.query("UPDATE invoices SET status = 'paid' WHERE id = $1", [
+        targetedInvoiceRow.id,
+      ]);
+
+      // Securely lock down database changes to commit rows smoothly
+      await client.query("COMMIT");
+      return res.status(200).json({
+        success: true,
+        message: `Action Confirmed: Statement profile reference [${targetedInvoiceRow.invoice_number}] has been successfully marked as PAID inside your ledger logs.`,
+      });
+    }
+
     throw new Error(
       `The specified intent instruction macro '${action}' is not supported by current core endpoints.`,
     );

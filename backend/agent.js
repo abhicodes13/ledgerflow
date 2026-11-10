@@ -7,10 +7,11 @@ const { AppError } = require("./errors");
 
 // Model name lives in .env so it can change without editing code.
 // (Default is the value used before; verify it against Google's current docs.)
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 const MAX_STEPS = 5; // model calls per user message
 const MAX_HISTORY = 12; // previous chat messages the model can see
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
+const THINKING_LEVEL = process.env.GEMINI_THINKING_LEVEL; // "low", "medium", or "high"
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -549,7 +550,10 @@ async function run({ userId, message, history }) {
       contents,
       config: {
         systemInstruction: buildSystemInstruction(),
-        tools: [{ functionDeclarations: DECLARATIONS }],
+        tools: [{ functionDeclarations: DECLARATIONS }], // note the [ ] around the object
+        ...(THINKING_LEVEL
+          ? { thinkingConfig: { thinkingLevel: THINKING_LEVEL } }
+          : {}),
       },
     });
 

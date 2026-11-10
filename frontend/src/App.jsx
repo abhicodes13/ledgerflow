@@ -29,6 +29,7 @@ import { errorMessage, readError } from "./lib/api";
 import { API_ERROR_EVENT } from "./lib/apiGuard";
 import { useReminders } from "./hooks/useReminders";
 import { ReminderModal } from "./components/ReminderModal";
+import { EstimatesSoon, SignaturesSoon } from "./pages/ComingSoonView";
 
 function App() {
   const data = useLedgerFlowData();
@@ -369,6 +370,15 @@ function App() {
       toast.error(`Couldn't run that action: ${err.message}`);
     }
   };
+  // Used by the Automations shortcuts: fill the chat and show the assistant
+  const askAssistant = (text) => {
+    setChatInput(text);
+    if (window.matchMedia("(min-width: 1280px)").matches) {
+      setIsConsoleVisible(true);
+    } else {
+      setIsMobileChatOpen(true);
+    }
+  };
 
   const filteredInvoices =
     data.invoicesList?.filter(
@@ -511,7 +521,18 @@ function App() {
               />,
             )}
           />
-          <Route path="automations" element={gated(<AutomationsView />)} />
+          <Route
+            path="automations"
+            element={gated(
+              <AutomationsView
+                invoices={data.invoicesList}
+                clients={data.clientsList}
+                loading={data.loading}
+                onRemind={reminders.start}
+                onAskAssistant={askAssistant}
+              />,
+            )}
+          />
           <Route
             path="settings"
             element={
@@ -529,7 +550,8 @@ function App() {
           />
         </Route>
       </Route>
-
+      <Route path="estimates" element={<EstimatesSoon />} />
+      <Route path="signatures" element={<SignaturesSoon />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );

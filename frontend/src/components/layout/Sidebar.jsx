@@ -1,9 +1,17 @@
 import { NavLink } from "react-router-dom";
 import { LogOut, Sparkles } from "lucide-react";
 import { cn } from "../../lib/cn";
-import { NAV } from "./nav";
+import { NAV, SOON_NAV } from "./nav";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
+
+const linkClass = ({ isActive }) =>
+  cn(
+    "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+    isActive
+      ? "bg-accent-soft text-accent"
+      : "text-fg-muted hover:bg-surface-2 hover:text-fg",
+  );
 
 export function Sidebar({
   badges = {},
@@ -45,30 +53,35 @@ export function Sidebar({
         </NavLink>
       </div>
 
-      <nav aria-label="Main" className="flex-1 space-y-1 px-3 py-2">
-        {NAV.map(({ id, label, icon: Icon, to, end }) => (
-          <NavLink
-            key={id}
-            to={to}
-            end={end}
-            className={({ isActive }) =>
-              cn(
-                "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-accent-soft text-accent"
-                  : "text-fg-muted hover:bg-surface-2 hover:text-fg",
-              )
-            }
-          >
-            <Icon className="h-[18px] w-[18px]" aria-hidden />
-            <span className="flex-1">{label}</span>
-            {badges[id] > 0 && (
-              <span className="rounded-full bg-danger-soft px-1.5 text-xs font-semibold leading-5 text-danger">
-                {badges[id]}
+      <nav aria-label="Main" className="flex-1 overflow-y-auto px-3 py-2">
+        <div className="space-y-1">
+          {NAV.map(({ id, label, icon: Icon, to, end }) => (
+            <NavLink key={id} to={to} end={end} className={linkClass}>
+              <Icon className="h-[18px] w-[18px]" aria-hidden />
+              <span className="flex-1">{label}</span>
+              {badges[id] > 0 && (
+                <span className="rounded-full bg-danger-soft px-1.5 text-xs font-semibold leading-5 text-danger">
+                  {badges[id]}
+                </span>
+              )}
+            </NavLink>
+          ))}
+        </div>
+
+        <p className="mb-1 mt-6 px-3 text-xs font-medium text-fg-subtle">
+          Coming soon
+        </p>
+        <div className="space-y-1">
+          {SOON_NAV.map(({ id, label, icon: Icon, to }) => (
+            <NavLink key={id} to={to} className={linkClass}>
+              <Icon className="h-[18px] w-[18px]" aria-hidden />
+              <span className="flex-1">{label}</span>
+              <span className="rounded-full bg-surface-2 px-1.5 text-[10px] font-medium leading-5 text-fg-subtle">
+                Soon
               </span>
-            )}
-          </NavLink>
-        ))}
+            </NavLink>
+          ))}
+        </div>
       </nav>
 
       <div className="space-y-3 border-t border-border p-3">

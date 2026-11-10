@@ -63,6 +63,9 @@ function translateDbError(error) {
 }
 
 const invoiceService = {
+  // Same validation the real create uses; the agent calls it before showing an approval card
+  validateItems: parseItems,
+
   // invoiceNumber is optional: if empty, the next number for this user is generated.
   async createFullInvoice(
     activeUserId,

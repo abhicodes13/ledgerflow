@@ -6,13 +6,13 @@ require("dotenv").config(); // must stay first so .env is loaded before other fi
 const express = require("express");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
-const { GoogleGenAI } = require("@google/genai");
 
 const pool = require("./db");
 const clientService = require("./clientService");
 const invoiceService = require("./invoiceService");
 const analyticsRepository = require("./analyticsRepository");
 const reminderService = require("./reminderService");
+const agent = require("./agent");
 const authService = require("./authService");
 const authenticateToken = require("./authMiddleware");
 const checkSubscription = require("./subscriptionMiddleware"); // paywall: use AFTER authenticateToken
@@ -22,13 +22,6 @@ const { generateInvoicePdfStream } = require("./utils/invoiceGenerator");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Model names live in .env so they can change without editing code.
-// (Defaults are the values this file used before; verify them against Google's current docs.)
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-const GEMINI_SUMMARY_MODEL =
-  process.env.GEMINI_SUMMARY_MODEL || "gemini-2.5-flash";
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // =========================================================================
 // HELPERS
@@ -401,123 +394,8 @@ app.post(
 );
 
 // =========================================================================
-// AI AGENT: tool definitions
-// The model only PROPOSES actions. Nothing is written until the user confirms.
-// =========================================================================
-const aiTools = [
-  {
-    functionDeclarations: [
-      {
-        name: "registerNewClient",
-        description:
-          "Registers a brand new client or customer under the active user account.",
-        parameters: {
-          type: "OBJECT",
-          properties: {
-            name: {
-              type: "STRING",
-              description: "The full name of the client or company.",
-            },
-            email: {
-              type: "STRING",
-              description: "The unique email address of the client.",
-            },
-          },
-          required: ["name", "email"],
-        },
-      },
-      {
-        name: "draftNewInvoice",
-        description:
-          "Prepares a new single or multi-line item invoice draft for an existing client identification number.",
-        parameters: {
-          type: "OBJECT",
-          properties: {
-            clientId: {
-              type: "NUMBER",
-              description: "The database ID integer of the target client.",
-            },
-            dueDate: {
-              type: "STRING",
-              description:
-                "The due date of the invoice formatted explicitly as YYYY-MM-DD.",
-            },
-            description: {
-              type: "STRING",
-              description:
-                "The text description of the primary service line allocation.",
-            },
-            amountCents: {
-              type: "NUMBER",
-              description:
-                "The total amount translated strictly into cents (e.g., $150.00 is 15000).",
-            },
-            items: {
-              type: "ARRAY",
-              description:
-                "Optional itemized line breakdown arrays for multi-item invoices.",
-              items: {
-                type: "OBJECT",
-                properties: {
-                  description: { type: "STRING" },
-                  quantity: { type: "NUMBER" },
-                  price: {
-                    type: "NUMBER",
-                    description: "Rate valuation in single dollars.",
-                  },
-                },
-              },
-            },
-          },
-          required: ["clientId", "dueDate"],
-        },
-      },
-      {
-        name: "settleInvoiceBalance",
-        description:
-          "Marks an outstanding invoice record balance as fully settled and paid inside the system ledger.",
-        parameters: {
-          type: "OBJECT",
-          properties: {
-            invoiceId: {
-              type: "NUMBER",
-              description:
-                "The database ID integer of the invoice being marked as paid.",
-            },
-          },
-          required: ["invoiceId"],
-        },
-      },
-      {
-        name: "sendInvoiceReminders",
-        description:
-          "Prepares payment reminder emails for the user's overdue invoices (one email per client). Nothing is sent until the user confirms. Only email is supported for now.",
-        parameters: {
-          type: "OBJECT",
-          properties: {
-            channel: {
-              type: "STRING",
-              description:
-                "Delivery channel. Only 'email' is supported right now.",
-            },
-          },
-        },
-      },
-      {
-        name: "calculateBusinessMetrics",
-        description:
-          "Returns the user's invoicing metrics: total outstanding, total overdue, total collected, collected this month, counts of pending and overdue invoices, and number of clients. Does not calculate recurring revenue.",
-        parameters: {
-          type: "OBJECT",
-          properties: {},
-        },
-      },
-    ],
-  },
-];
-
-// =========================================================================
-// AI AGENT: chat (proposes an action or answers)
+// AI AGENT: chat. The model can look things up and propose actions; it never
+// changes data. Writes only happen in /api/chat/confirm after the user approves.
 // =========================================================================
 app.post(
   "/api/chat",
@@ -525,8 +403,8 @@ app.post(
   checkSubscription,
   async (req, res) => {
     try {
-      const activeUserId = getUserId(req);
-      const { message } = req.body;
+      const userId = getUserId(req);
+      const { message, history } = req.body;
 
       if (typeof message !== "string" || message.trim() === "") {
         throw new AppError("Message content cannot be blank.", 400);
@@ -554,143 +432,13 @@ app.post(
         });
       }
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: message,
-        config: { tools: aiTools },
+      // history (optional): [{ role: "user" | "assistant", text: "..." }, ...]
+      const reply = await agent.run({
+        userId,
+        message: message.trim(),
+        history,
       });
-
-      const functionCall = response.functionCalls?.[0];
-
-      if (functionCall) {
-        const toolName = functionCall.name;
-        const args = functionCall.args || {};
-        console.log(`[AI AGENT] model selected tool: ${toolName}`);
-
-        // Propose: create a client
-        if (toolName === "registerNewClient") {
-          return res.json({
-            type: "approval_required",
-            action: "create_client",
-            message: `I've prepared a draft to register **${args.name}** (${args.email}) as a new customer. Please confirm to save.`,
-            data: { name: args.name, email: args.email },
-          });
-        }
-
-        // Propose: create an invoice (never invents an amount, client, or number)
-        if (toolName === "draftNewInvoice") {
-          const items =
-            Array.isArray(args.items) && args.items.length
-              ? args.items
-              : args.amountCents
-                ? [
-                    {
-                      description: args.description || "Services",
-                      quantity: 1,
-                      price: args.amountCents / 100,
-                    },
-                  ]
-                : null;
-
-          if (!items) {
-            return res.json({
-              type: "text",
-              message:
-                "What amount (or line items) should this invoice be for?",
-            });
-          }
-
-          const totalCents = items.reduce(
-            (sum, it) =>
-              sum +
-              Math.round(Number(it.price) * 100) * Number(it.quantity || 1),
-            0,
-          );
-
-          return res.json({
-            type: "approval_required",
-            action: "create_invoice",
-            message: `I've drafted an invoice for Client ID **#${args.clientId}** totaling **$${(totalCents / 100).toFixed(2)}**, due **${args.dueDate}**. The invoice number is assigned when it's created. Proceed?`,
-            data: {
-              client_id: Number(args.clientId),
-              due_date: args.dueDate,
-              items,
-            },
-          });
-        }
-
-        // Propose: mark an invoice paid
-        if (toolName === "settleInvoiceBalance") {
-          return res.json({
-            type: "approval_required",
-            action: "settle_invoice",
-            message: `I've located Invoice ID **#${args.invoiceId}**. Would you like me to mark it as paid?`,
-            data: { invoiceId: Number(args.invoiceId) },
-          });
-        }
-
-        // Propose: email reminders for overdue invoices. The server decides who gets
-        // contacted (the model supplies nothing but the channel) and nothing is sent yet.
-        if (toolName === "sendInvoiceReminders") {
-          if (args.channel && String(args.channel).toLowerCase() !== "email") {
-            return res.json({
-              type: "text",
-              message:
-                "Text message reminders aren't available yet. I can send email reminders instead.",
-            });
-          }
-
-          const preview = await reminderService.previewReminders(
-            activeUserId,
-            {},
-          );
-
-          if (preview.recipients.length === 0) {
-            const reasons = [
-              ...new Set(preview.skipped.map((x) => x.reason)),
-            ].join(", ");
-            return res.json({
-              type: "text",
-              message: preview.skipped.length
-                ? `Nothing to send right now. ${preview.skipped.length} overdue invoice(s) were skipped (${reasons}).`
-                : "You have no overdue invoices to send reminders for.",
-            });
-          }
-
-          const names = preview.recipients
-            .slice(0, 5)
-            .map((r) => r.client_name)
-            .join(", ");
-          const more =
-            preview.recipients.length > 5
-              ? ` and ${preview.recipients.length - 5} more`
-              : "";
-          const skippedNote = preview.skipped.length
-            ? ` (${preview.skipped.length} invoice(s) skipped: already reminded recently or missing an email.)`
-            : "";
-
-          return res.json({
-            type: "approval_required",
-            action: "send_reminders",
-            message: `I'll email ${preview.recipients.length} client(s) about ${preview.invoice_count} overdue invoice(s): ${names}${more}.${skippedNote} Send the reminders?`,
-            data: { pendingActionId: preview.pendingActionId },
-          });
-        }
-
-        // Read-only: business metrics (no confirmation needed)
-        if (toolName === "calculateBusinessMetrics") {
-          const metrics =
-            await analyticsRepository.getOverviewMetrics(activeUserId);
-          const briefResponse = await ai.models.generateContent({
-            model: GEMINI_SUMMARY_MODEL,
-            contents: `Express these business statistics to the user in a short, motivating executive summary text paragraph: ${JSON.stringify(metrics)}`,
-          });
-          return res.json({ type: "text", message: briefResponse.text });
-        }
-      }
-
-      // No tool call: return the model's plain reply
-      return res.json({ type: "text", message: response.text });
+      return res.json(reply);
     } catch (error) {
       if (error instanceof AppError)
         return sendError(res, error, "chat failed");

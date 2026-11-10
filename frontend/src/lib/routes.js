@@ -5,6 +5,8 @@ export const TAB_PATHS = {
   customers: "/app/clients",
   automations: "/app/automations",
   settings: "/app/settings",
+  estimates: "/app/estimates",
+  signatures: "/app/signatures",
 };
 
 export const tabToPath = (id) => TAB_PATHS[id] ?? TAB_PATHS.dashboard;

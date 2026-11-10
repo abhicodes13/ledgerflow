@@ -29,6 +29,7 @@ import {
   invoiceState,
 } from "../lib/format";
 import { cn } from "../lib/cn";
+import { RemindedNote } from "../components/ReminderModal";
 
 // Suggestions are placeholders until the AI backend supplies real ones.
 const SUGGESTIONS = [
@@ -118,6 +119,7 @@ export function DashboardView({
   loading = false,
   currentUser,
   onNavigate,
+  onRemind,
 }) {
   const toast = useToast();
   const [suggestion, setSuggestion] = useState(null);
@@ -158,11 +160,6 @@ export function DashboardView({
     hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const name = currentUser?.username;
   const clientCount = metrics?.total_clients_count || 0;
-
-  const sendReminder = (inv) =>
-    toast.info(
-      `Reminder for ${inv.invoice_number} to ${inv.client_name} (preview: email sending isn't connected yet)`,
-    );
 
   return (
     <>
@@ -217,20 +214,33 @@ export function DashboardView({
       </section>
 
       {/* Needs attention */}
+
       <Card>
         <CardHeader
           title="Needs attention"
           description="Unpaid invoices, most urgent first."
           action={
             attention.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onNavigate?.("billing")}
-              >
-                View all
-                <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-              </Button>
+              <div className="flex items-center gap-1">
+                {overdue.length > 0 && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => onRemind?.()}
+                  >
+                    <Mail className="h-3.5 w-3.5" aria-hidden />
+                    Remind all overdue
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onNavigate?.("billing")}
+                >
+                  View all
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                </Button>
+              </div>
             )
           }
         />
@@ -259,20 +269,23 @@ export function DashboardView({
                   <p className="mt-0.5 truncate text-sm text-fg-muted">
                     {inv.client_name} · {dueLabel(inv)}
                     {inv.due_date && ` (${formatDate(inv.due_date)})`}
+                    <RemindedNote invoice={inv} />
                   </p>
                 </div>
                 <div className="flex items-center justify-between gap-4 sm:justify-end">
                   <span className="num text-sm font-semibold text-fg">
                     {formatCurrency(invoiceAmountCents(inv))}
                   </span>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => sendReminder(inv)}
-                  >
-                    <Mail className="h-3.5 w-3.5" aria-hidden />
-                    Remind
-                  </Button>
+                  {invoiceState(inv) === "overdue" && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => onRemind?.([inv.id])}
+                    >
+                      <Mail className="h-3.5 w-3.5" aria-hidden />
+                      Remind
+                    </Button>
+                  )}
                 </div>
               </li>
             ))}

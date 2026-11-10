@@ -56,3 +56,49 @@ export function invoiceState(inv) {
   const d = daysUntilDue(inv?.due_date);
   return d !== null && d < 0 ? "overdue" : "pending";
 }
+
+/* ───────── Reminders ───────── */
+
+// "2 days ago" for a real timestamp (not a calendar date)
+export function timeAgo(value) {
+  const t = new Date(value).getTime();
+  if (Number.isNaN(t)) return null;
+  const s = Math.round((Date.now() - t) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} hr ago`;
+  const d = Math.round(h / 24);
+  if (d < 30) return `${d} day${d === 1 ? "" : "s"} ago`;
+  return new Date(t).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+// I don't know your exact column name. Add yours to this list if it isn't here.
+const REMINDED_KEYS = [
+  "last_reminded_at",
+  "last_reminder_at",
+  "last_reminder_sent_at",
+  "reminded_at",
+  "last_reminded",
+];
+
+// known = the server sends the field at all; at = when (null = never)
+export function lastRemindedOf(inv) {
+  const key = REMINDED_KEYS.find((k) => inv && k in inv);
+  return key ? { known: true, at: inv[key] } : { known: false, at: null };
+}
+
+// Uses the invoice's own email if present, else looks the client up
+export function invoiceClientEmail(inv, clients = []) {
+  if (inv?.client_email) return inv.client_email;
+  const c =
+    clients.find(
+      (c) => inv?.client_id != null && Number(c.id) === Number(inv.client_id),
+    ) ?? clients.find((c) => c.name === inv?.client_name);
+  return c?.email ?? "";
+}

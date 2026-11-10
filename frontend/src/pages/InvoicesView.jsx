@@ -22,11 +22,15 @@ import {
   StatusBadge,
   useToast,
 } from "../components/ui";
+import { RemindedNote } from "../components/ReminderModal";
 import {
   formatCurrency,
   formatDate,
   invoiceAmountCents,
+  invoiceClientEmail,
   invoiceState,
+  lastRemindedOf,
+  timeAgo,
 } from "../lib/format";
 import { fetchPdfBlob, saveBlob } from "../lib/api";
 import { cn } from "../lib/cn";
@@ -46,6 +50,7 @@ export function InvoicesView({
   handleInvoiceSubmitInternal,
   handleSettleInternal,
   onNavigate,
+  onRemind,
 }) {
   const toast = useToast();
   const [filter, setFilter] = useState("all");
@@ -194,6 +199,10 @@ export function InvoicesView({
           ]
         : [];
 
+  const selEmail = selected
+    ? invoiceClientEmail(selected, data.clientsList)
+    : "";
+  const selReminded = selected ? lastRemindedOf(selected) : { known: false };
   const searching = !!data.searchTerm;
 
   return (
@@ -202,10 +211,18 @@ export function InvoicesView({
         title="Invoices"
         description="Create, track, and collect payment on your invoices."
         actions={
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" aria-hidden />
-            New invoice
-          </Button>
+          <>
+            {counts.overdue > 0 && (
+              <Button variant="secondary" onClick={() => onRemind?.()}>
+                <Mail className="h-4 w-4" aria-hidden />
+                Send reminders
+              </Button>
+            )}
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" aria-hidden />
+              New invoice
+            </Button>
+          </>
         }
       />
 
@@ -299,6 +316,9 @@ export function InvoicesView({
                       </p>
                       <p className="truncate text-sm text-fg-muted">
                         {inv.client_name}
+                        {inv.status !== "paid" && (
+                          <RemindedNote invoice={inv} />
+                        )}
                       </p>
                     </div>
                     <p className="hidden w-36 text-sm text-fg-muted sm:block">
@@ -491,17 +511,19 @@ export function InvoicesView({
                 <Copy className="h-4 w-4" aria-hidden />
                 Copy link
               </Button>
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  toast.info(
-                    `Preview: emailing ${selected.client_name} isn't connected yet`,
-                  )
-                }
-              >
-                <Mail className="h-4 w-4" aria-hidden />
-                Send email
-              </Button>
+              {invoiceState(selected) === "overdue" && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const id = selected.id;
+                    setSelected(null);
+                    onRemind?.([id]);
+                  }}
+                >
+                  <Mail className="h-4 w-4" aria-hidden />
+                  Send reminder
+                </Button>
+              )}
               {selected.status !== "paid" ? (
                 <Button onClick={settle} loading={settling}>
                   <CheckCircle2 className="h-4 w-4" aria-hidden />
@@ -520,11 +542,14 @@ export function InvoicesView({
         {selected && (
           <div className="space-y-6">
             <div className="flex items-start justify-between gap-4">
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs font-medium text-fg-muted">Billed to</p>
                 <p className="mt-0.5 text-base font-semibold text-fg">
                   {selected.client_name}
                 </p>
+                {selEmail && (
+                  <p className="truncate text-sm text-fg-muted">{selEmail}</p>
+                )}
               </div>
               <StatusBadge invoice={selected} />
             </div>
@@ -543,6 +568,13 @@ export function InvoicesView({
                 </p>
               </div>
             </div>
+
+            {selected.status !== "paid" && selReminded.known && (
+              <p className="text-xs text-fg-subtle">
+                Last reminded:{" "}
+                {selReminded.at ? timeAgo(selReminded.at) : "Never"}
+              </p>
+            )}
 
             <div>
               <h3 className="mb-2 text-sm font-semibold text-fg">Items</h3>

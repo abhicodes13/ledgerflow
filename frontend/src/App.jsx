@@ -27,11 +27,21 @@ import { invoiceState } from "./lib/format";
 import { tabToPath } from "./lib/routes";
 import { errorMessage, readError } from "./lib/api";
 import { API_ERROR_EVENT } from "./lib/apiGuard";
+import { useReminders } from "./hooks/useReminders";
+import { ReminderModal } from "./components/ReminderModal";
 
 function App() {
   const data = useLedgerFlowData();
   const { theme, setTheme } = useTheme();
   const toast = useToast();
+  const reminders = useReminders({
+    apiBase: data.API_BASE,
+    token: data.token,
+    onSent: () => {
+      data.fetchInvoicesList();
+      data.fetchMetrics();
+    },
+  });
   const billing = useBilling({
     apiBase: data.API_BASE,
     token: data.token,
@@ -411,6 +421,7 @@ function App() {
       }
     >
       <Outlet />
+      <ReminderModal reminders={reminders} />
     </AppShell>
   );
 
@@ -474,6 +485,7 @@ function App() {
                 loading={data.loading}
                 currentUser={data.currentUser}
                 onNavigate={setActiveTab}
+                onRemind={reminders.start}
               />,
             )}
           />
@@ -486,6 +498,7 @@ function App() {
                 handleInvoiceSubmitInternal={handleInvoiceSubmitInternal}
                 handleSettleInternal={handleSettleInternal}
                 onNavigate={setActiveTab}
+                onRemind={reminders.start}
               />,
             )}
           />

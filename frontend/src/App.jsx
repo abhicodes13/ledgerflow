@@ -115,7 +115,7 @@ function App() {
     if (isRegistering) body.email = authEmail.trim();
 
     try {
-      const res = await fetch(`${data.API_BASE}${endpointPath}`, {
+      const res = await fetch(`${data.API_BASE}/${endpointPath}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

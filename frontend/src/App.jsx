@@ -29,7 +29,8 @@ import { errorMessage, readError } from "./lib/api";
 import { API_ERROR_EVENT } from "./lib/apiGuard";
 import { useReminders } from "./hooks/useReminders";
 import { ReminderModal } from "./components/ReminderModal";
-import { EstimatesSoon, SignaturesSoon } from "./pages/ComingSoonView";
+import { EstimatesView } from "./pages/EstimatesView";
+import { SignaturesView } from "./pages/SignaturesView";
 
 function App() {
   const data = useLedgerFlowData();
@@ -545,13 +546,21 @@ function App() {
             }
           />
           <Route
+            path="estimates"
+            element={<EstimatesView currentUser={data.currentUser} />}
+          />
+          <Route
+            path="signatures"
+            element={<SignaturesView currentUser={data.currentUser} />}
+          />
+
+          <Route
             path="*"
             element={<NotFoundPage home="/app" label="Back to dashboard" />}
           />
         </Route>
       </Route>
-      <Route path="estimates" element={<EstimatesSoon />} />
-      <Route path="signatures" element={<SignaturesSoon />} />
+
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );

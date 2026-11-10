@@ -2,11 +2,19 @@
 // LEDGERFLOW API SERVER
 // =========================================================================
 require("dotenv").config(); // must stay first so .env is loaded before other files read it
-
+const required = [
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+  "JWT_SECRET",
+  "RESEND_API_KEY",
+  "FRONTEND_PRODUCTION_URL",
+];
+for (const k of required)
+  if (!process.env[k]) throw new Error(`Missing env var: ${k}`);
 const express = require("express");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
-
+const helmet = require("helmet");
 const pool = require("./db");
 const clientService = require("./clientService");
 const invoiceService = require("./invoiceService");
@@ -54,11 +62,13 @@ function sendError(res, error, label) {
 // MIDDLEWARE (order matters)
 // =========================================================================
 const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:3000",
-  process.env.FRONTEND_PRODUCTION_URL, // cloud-deployed frontend URL
+  process.env.FRONTEND_PRODUCTION_URL,
+  ...(process.env.NODE_ENV !== "production"
+    ? ["http://localhost:5173", "http://localhost:3000"]
+    : []),
 ].filter(Boolean);
-
+app.set("trust proxy", 1);
+app.use(helmet());
 // CORS first, so even rate-limit rejections carry CORS headers
 app.use(
   cors({

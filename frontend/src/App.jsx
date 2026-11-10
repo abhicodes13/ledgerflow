@@ -109,9 +109,7 @@ function App() {
     setAuthSubmitting(true);
     setAuthMessage({ text: "", isError: false });
 
-    const endpointPath = isRegistering
-      ? "/api/auth/register"
-      : "/api/auth/login";
+    const endpointPath = isRegistering ? "api/auth/register" : "api/auth/login";
 
     const body = { username: authUsername, password: authPassword };
     if (isRegistering) body.email = authEmail.trim();

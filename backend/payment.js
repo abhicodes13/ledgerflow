@@ -168,8 +168,8 @@ router.post(
         customer: customerId,
         client_reference_id: String(user.id),
         line_items: [{ price: priceId, quantity: 1 }],
-        success_url: `${FRONTEND_URL}/dashboard?payment=success`,
-        cancel_url: `${FRONTEND_URL}/dashboard?payment=cancelled`,
+        success_url: `${FRONTEND_URL}/app?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${FRONTEND_URL}/app?payment=cancelled`,
       });
 
       return res.json({ url: session.url });
@@ -204,7 +204,7 @@ router.post("/billing-portal", authenticateToken, async (req, res) => {
 
     const portal = await stripe.billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${FRONTEND_URL}/dashboard`,
+      return_url: `${FRONTEND_URL}/app`,
     });
     return res.json({ url: portal.url });
   } catch (error) {
@@ -282,6 +282,67 @@ router.post(
       return res.status(500).json({ error: "Webhook handling failed" });
     } finally {
       if (db) db.release();
+    }
+  },
+);
+
+// -------------------------------------------------------------------------
+// POST /api/payment/confirm-session
+// Called by the frontend right after Stripe redirects back. The server asks
+// Stripe directly whether THIS user's checkout completed, then activates the
+// account. Works without a webhook (handy locally); the webhook still handles
+// renewals, failed payments, and cancellations.
+// Body: { sessionId }
+// -------------------------------------------------------------------------
+router.post(
+  "/confirm-session",
+  authenticateToken,
+  express.json(),
+  async (req, res) => {
+    try {
+      const userId = Number(req.user?.userId);
+      const sessionId = req.body?.sessionId;
+      if (typeof sessionId !== "string" || !sessionId.startsWith("cs_")) {
+        return res
+          .status(400)
+          .json({ success: false, error: "Invalid session." });
+      }
+
+      const userResult = await pool.query(
+        "SELECT stripe_customer_id FROM users WHERE id = $1",
+        [userId],
+      );
+      const customerId = userResult.rows[0]?.stripe_customer_id;
+
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+      // Must be THIS user's own completed subscription checkout
+      if (
+        !customerId ||
+        session.customer !== customerId ||
+        session.client_reference_id !== String(userId) ||
+        session.mode !== "subscription" ||
+        session.status !== "complete" ||
+        !session.subscription
+      ) {
+        return res
+          .status(400)
+          .json({ success: false, error: "Checkout not completed." });
+      }
+
+      const subscription = await stripe.subscriptions.retrieve(
+        session.subscription,
+      );
+      await applySubscription(pool, subscription);
+      return res.json({
+        success: true,
+        billing_status: toBillingStatus(subscription.status),
+      });
+    } catch (error) {
+      console.error("Confirm session failed:", error);
+      return res
+        .status(500)
+        .json({ success: false, error: "Could not confirm payment." });
     }
   },
 );

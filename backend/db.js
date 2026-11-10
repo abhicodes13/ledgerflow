@@ -1,6 +1,5 @@
-const { types } = require("pg");
+const { Pool, types } = require("pg");
 types.setTypeParser(1082, (value) => value); // keep DATE columns as "2026-12-31" strings
-const { Pool } = require("pg");
 // Automatically load variables from a .env file if it exists
 require("dotenv").config();
 

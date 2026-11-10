@@ -21,25 +21,9 @@ import { Badge } from "../components/ui";
 import { Aurora, Reveal } from "../components/landing/Effects";
 import { Showcase } from "../components/landing/Showcase";
 import { cn } from "../lib/cn";
+import { PLAN, perMonthYearly, savings, savingsPct } from "../lib/plan";
 
 /* ───────── Edit your plan here ───────── */
-const PLAN = {
-  name: "Pro",
-  tagline: "Everything you need to invoice and get paid.",
-  monthly: 19,
-  yearly: 200,
-  features: [
-    "Unlimited invoices and clients",
-    "Itemized invoices with automatic totals",
-    "Paid, pending, and overdue tracking",
-    "Dashboard with cash-flow overview",
-    "AI assistant with approval before every action",
-    "Light and dark themes",
-  ],
-};
-const yearlyFull = PLAN.monthly * 12;
-const savings = yearlyFull - PLAN.yearly;
-const savingsPct = Math.round((savings / yearlyFull) * 100);
 
 const PAIN_POINTS = [
   {
@@ -160,9 +144,8 @@ function SectionHeading({ eyebrow, title, text }) {
   );
 }
 
-function Pricing({ cta }) {
+function Pricing({ cta, isAuthed, billing }) {
   const [yearly, setYearly] = useState(true);
-  const perMonthYearly = (PLAN.yearly / 12).toFixed(2);
 
   return (
     <section id="pricing" className="scroll-mt-20 px-4 py-20 sm:px-6">
@@ -229,10 +212,29 @@ function Pricing({ cta }) {
           )}
         </p>
 
-        <Link to={cta} className={`${btnPrimary} mt-6 w-full`}>
-          Get started
-          <ArrowRight className="h-4 w-4" aria-hidden />
-        </Link>
+        {!isAuthed ? (
+          <Link to="/login" className={`${btnPrimary} mt-6 w-full`}>
+            Get started
+            <ArrowRight className="h-4 w-4" aria-hidden />
+          </Link>
+        ) : billing?.status === "active" ? (
+          <Link to="/app" className={`${btnPrimary} mt-6 w-full`}>
+            Open your dashboard
+            <ArrowRight className="h-4 w-4" aria-hidden />
+          </Link>
+        ) : (
+          <button
+            type="button"
+            disabled={!!billing?.busy}
+            onClick={() =>
+              billing?.startCheckout(yearly ? "yearly" : "monthly")
+            }
+            className={`${btnPrimary} mt-6 w-full disabled:opacity-60`}
+          >
+            {billing?.busy ? "Opening checkout..." : "Subscribe"}
+            <ArrowRight className="h-4 w-4" aria-hidden />
+          </button>
+        )}
 
         <ul className="mt-8 space-y-3">
           {PLAN.features.map((f) => (
@@ -250,7 +252,7 @@ function Pricing({ cta }) {
   );
 }
 
-export function LandingPage({ isAuthed, theme, setTheme }) {
+export function LandingPage({ isAuthed, theme, setTheme, billing }) {
   const { hash } = useLocation();
   useEffect(() => {
     if (hash) document.querySelector(hash)?.scrollIntoView();
@@ -399,7 +401,7 @@ export function LandingPage({ isAuthed, theme, setTheme }) {
           </ol>
         </section>
 
-        <Pricing cta={cta} />
+        <Pricing cta={cta} isAuthed={isAuthed} billing={billing} />
 
         {/* FAQ */}
         <section id="faq" className="scroll-mt-20 px-4 pb-20 sm:px-6">

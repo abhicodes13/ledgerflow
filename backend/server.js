@@ -12,6 +12,7 @@ const pool = require("./db");
 const clientService = require("./clientService");
 const invoiceService = require("./invoiceService");
 const analyticsRepository = require("./analyticsRepository");
+const reminderService = require("./reminderService");
 const authService = require("./authService");
 const authenticateToken = require("./authMiddleware");
 const checkSubscription = require("./subscriptionMiddleware"); // paywall: use AFTER authenticateToken
@@ -354,6 +355,52 @@ app.get(
 );
 
 // =========================================================================
+// REMINDERS (email). The preview stores exactly what will be sent;
+// only confirming sends it.
+// =========================================================================
+app.post(
+  "/api/reminders/preview",
+  authenticateToken,
+  checkSubscription,
+  async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const { channel, invoice_ids } = req.body;
+      if (channel && channel !== "email") {
+        throw new AppError(
+          "Only email reminders are supported right now.",
+          400,
+        );
+      }
+      const preview = await reminderService.previewReminders(userId, {
+        invoiceIds: invoice_ids,
+      });
+      return res.json({ success: true, ...preview });
+    } catch (error) {
+      return sendError(res, error, "reminder preview failed");
+    }
+  },
+);
+
+app.post(
+  "/api/reminders/:id/confirm",
+  authenticateToken,
+  checkSubscription,
+  async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const result = await reminderService.confirmReminders(
+        userId,
+        req.params.id,
+      );
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      return sendError(res, error, "reminder confirm failed");
+    }
+  },
+);
+
+// =========================================================================
 // AI AGENT: tool definitions
 // The model only PROPOSES actions. Nothing is written until the user confirms.
 // =========================================================================
@@ -442,9 +489,24 @@ const aiTools = [
         },
       },
       {
+        name: "sendInvoiceReminders",
+        description:
+          "Prepares payment reminder emails for the user's overdue invoices (one email per client). Nothing is sent until the user confirms. Only email is supported for now.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            channel: {
+              type: "STRING",
+              description:
+                "Delivery channel. Only 'email' is supported right now.",
+            },
+          },
+        },
+      },
+      {
         name: "calculateBusinessMetrics",
         description:
-          "Queries the system analytical ledgers to pull total Monthly Recurring Revenue (MRR), outstanding payments, and cash totals.",
+          "Returns the user's invoicing metrics: total outstanding, total overdue, total collected, collected this month, counts of pending and overdue invoices, and number of clients. Does not calculate recurring revenue.",
         parameters: {
           type: "OBJECT",
           properties: {},
@@ -567,6 +629,54 @@ app.post(
           });
         }
 
+        // Propose: email reminders for overdue invoices. The server decides who gets
+        // contacted (the model supplies nothing but the channel) and nothing is sent yet.
+        if (toolName === "sendInvoiceReminders") {
+          if (args.channel && String(args.channel).toLowerCase() !== "email") {
+            return res.json({
+              type: "text",
+              message:
+                "Text message reminders aren't available yet. I can send email reminders instead.",
+            });
+          }
+
+          const preview = await reminderService.previewReminders(
+            activeUserId,
+            {},
+          );
+
+          if (preview.recipients.length === 0) {
+            const reasons = [
+              ...new Set(preview.skipped.map((x) => x.reason)),
+            ].join(", ");
+            return res.json({
+              type: "text",
+              message: preview.skipped.length
+                ? `Nothing to send right now. ${preview.skipped.length} overdue invoice(s) were skipped (${reasons}).`
+                : "You have no overdue invoices to send reminders for.",
+            });
+          }
+
+          const names = preview.recipients
+            .slice(0, 5)
+            .map((r) => r.client_name)
+            .join(", ");
+          const more =
+            preview.recipients.length > 5
+              ? ` and ${preview.recipients.length - 5} more`
+              : "";
+          const skippedNote = preview.skipped.length
+            ? ` (${preview.skipped.length} invoice(s) skipped: already reminded recently or missing an email.)`
+            : "";
+
+          return res.json({
+            type: "approval_required",
+            action: "send_reminders",
+            message: `I'll email ${preview.recipients.length} client(s) about ${preview.invoice_count} overdue invoice(s): ${names}${more}.${skippedNote} Send the reminders?`,
+            data: { pendingActionId: preview.pendingActionId },
+          });
+        }
+
         // Read-only: business metrics (no confirmation needed)
         if (toolName === "calculateBusinessMetrics") {
           const metrics =
@@ -649,6 +759,19 @@ app.post(
         return res.json({
           success: true,
           message: `Invoice ${invoice.invoice_number} marked as PAID.`,
+        });
+      }
+
+      if (action === "send_reminders") {
+        // The browser only sends back an id; the recipients were stored on the server
+        const result = await reminderService.confirmReminders(
+          userId,
+          data.pendingActionId,
+        );
+        return res.json({
+          success: true,
+          message: `Sent ${result.sent} reminder email(s)${result.failed ? `, ${result.failed} failed` : ""}.`,
+          results: result.results,
         });
       }
 

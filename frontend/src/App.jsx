@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import { useLedgerFlowData } from "./hooks/useLedgerFlowData";
 import { useTheme } from "./hooks/useTheme";
+import { useBilling, usePaymentReturn } from "./hooks/useBilling";
 import { useToast } from "./components/ui";
 import { AppShell } from "./components/layout/AppShell";
 import { AuthScreen } from "./components/layout/AuthScreen";
@@ -16,6 +17,7 @@ import { RequireAuth } from "./components/RequireAuth";
 import { AIConsole } from "./components/AIConsole";
 import { LandingPage } from "./pages/LandingPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { PaywallView } from "./pages/PaywallView";
 import { DashboardView } from "./pages/DashboardView";
 import { InvoicesView } from "./pages/InvoicesView";
 import { ClientsView } from "./pages/ClientsView";
@@ -24,13 +26,18 @@ import { SettingsView } from "./pages/SettingsView";
 import { invoiceState } from "./lib/format";
 import { tabToPath } from "./lib/routes";
 import { errorMessage, readError } from "./lib/api";
-import { UpgradeModal } from "./components/upgradeModal";
 import { API_ERROR_EVENT } from "./lib/apiGuard";
 
 function App() {
   const data = useLedgerFlowData();
   const { theme, setTheme } = useTheme();
   const toast = useToast();
+  const billing = useBilling({
+    apiBase: data.API_BASE,
+    token: data.token,
+    toast,
+  });
+  usePaymentReturn(billing, toast);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -54,8 +61,6 @@ function App() {
   const [chatLoading, setChatLoading] = useState(false);
   const chatBottomRef = useRef(null);
 
-  const [upgrade, setUpgrade] = useState({ open: false, status: null });
-
   const [chatMessages, setChatMessages] = useState([
     {
       type: "action_deck",
@@ -63,12 +68,13 @@ function App() {
       text: "Hi! I can add clients, draft invoices, and mark payments as received. Pick a shortcut below or just type what you need.",
     },
   ]);
+
   // React to auth and billing failures from any API call
   useEffect(() => {
     const onApiError = (e) => {
       const { status, code, billingStatus } = e.detail;
       if (code === "SUBSCRIPTION_REQUIRED") {
-        setUpgrade({ open: true, status: billingStatus });
+        billing.setStatus(billingStatus || "inactive"); // shows the paywall
       } else if (status === 401) {
         data.handleLogout();
         toast.error("Your session has ended. Please sign in again.");
@@ -77,6 +83,7 @@ function App() {
     window.addEventListener(API_ERROR_EVENT, onApiError);
     return () => window.removeEventListener(API_ERROR_EVENT, onApiError);
   });
+
   // Sign in / sign up
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -170,8 +177,9 @@ function App() {
         },
         body: JSON.stringify(body),
       });
-      if (!res.ok)
+      if (!res.ok) {
         throw new Error(await readError(res, "Couldn't save the invoice."));
+      }
       const created = await res.json().catch(() => null);
       const assigned = created?.invoice?.invoice_number;
 
@@ -182,7 +190,7 @@ function App() {
       data.fetchMetrics();
       data.fetchInvoicesList();
       toast.success(
-        assigned ? `"Invoice {assigned} created` : "Invoice created",
+        assigned ? `Invoice ${assigned} created` : "Invoice created",
       );
       return true;
     } catch (err) {
@@ -206,8 +214,9 @@ function App() {
           email: data.clientEmail,
         }),
       });
-      if (!res.ok)
+      if (!res.ok) {
         throw new Error(await readError(res, "Couldn't save the client."));
+      }
 
       data.setClientName("");
       data.setClientEmail("");
@@ -357,6 +366,10 @@ function App() {
     (inv) => invoiceState(inv) === "overdue",
   ).length;
 
+  // Unpaid accounts see the paywall instead of empty pages (Settings stays open)
+  const gated = (page) =>
+    billing.isBlocked ? <PaywallView billing={billing} /> : page;
+
   // Layout route: the shell wraps every /app/* page
   const shell = (
     <AppShell
@@ -389,15 +402,6 @@ function App() {
       }
     >
       <Outlet />
-      <UpgradeModal
-        open={upgrade.open}
-        status={upgrade.status}
-        onClose={() => setUpgrade((u) => ({ ...u, open: false }))}
-        onViewPlans={() => {
-          setUpgrade((u) => ({ ...u, open: false }));
-          navigate({ pathname: "/", hash: "#pricing" });
-        }}
-      />
     </AppShell>
   );
 
@@ -433,47 +437,59 @@ function App() {
             isAuthed={!!data.token}
             theme={theme}
             setTheme={setTheme}
+            billing={billing}
           />
         }
       />
       <Route path="/login" element={loginElement} />
 
+      {/* Stripe currently returns users to /dashboard?payment=... */}
+      <Route
+        path="/dashboard"
+        element={
+          <Navigate
+            to={{ pathname: "/app", search: location.search }}
+            replace
+          />
+        }
+      />
+
       <Route element={<RequireAuth token={data.token} />}>
         <Route path="/app" element={shell}>
           <Route
             index
-            element={
+            element={gated(
               <DashboardView
                 metrics={data.metrics}
                 invoicesList={data.invoicesList}
                 loading={data.loading}
                 currentUser={data.currentUser}
                 onNavigate={setActiveTab}
-              />
-            }
+              />,
+            )}
           />
           <Route
             path="invoices"
-            element={
+            element={gated(
               <InvoicesView
                 data={data}
                 filteredInvoices={filteredInvoices}
                 handleInvoiceSubmitInternal={handleInvoiceSubmitInternal}
                 handleSettleInternal={handleSettleInternal}
                 onNavigate={setActiveTab}
-              />
-            }
+              />,
+            )}
           />
           <Route
             path="clients"
-            element={
+            element={gated(
               <ClientsView
                 data={data}
                 handleClientSubmitInternal={handleClientSubmitInternal}
-              />
-            }
+              />,
+            )}
           />
-          <Route path="automations" element={<AutomationsView />} />
+          <Route path="automations" element={gated(<AutomationsView />)} />
           <Route
             path="settings"
             element={
@@ -481,6 +497,7 @@ function App() {
                 theme={theme}
                 setTheme={setTheme}
                 currentUser={data.currentUser}
+                billing={billing}
               />
             }
           />

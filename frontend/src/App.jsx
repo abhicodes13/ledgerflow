@@ -212,6 +212,7 @@ function App() {
         body: JSON.stringify({
           name: data.clientName,
           email: data.clientEmail,
+          phone_number: data.clientPhone?.trim() || undefined,
         }),
       });
       if (!res.ok) {
@@ -220,6 +221,7 @@ function App() {
 
       data.setClientName("");
       data.setClientEmail("");
+      data.setClientPhone("");
       data.fetchMetrics();
       data.fetchClientsList();
       toast.success("Client added");
@@ -340,7 +342,7 @@ function App() {
             ? {
                 type: "text",
                 sender: "ai",
-                text: `Action Confirmed: ${resData.message}`,
+                text: `Action Confirmed: ${resData.message || "Done."}`,
               }
             : msg,
         ),

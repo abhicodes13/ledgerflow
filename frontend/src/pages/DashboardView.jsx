@@ -62,6 +62,8 @@ const TONE_STYLES = {
 function dueLabel(inv) {
   if (inv.status === "paid") return "Paid";
   const d = daysUntilDue(inv.due_date);
+  if (invoiceState(inv) === "overdue" && (d === null || d >= 0))
+    return "Overdue";
   if (d === null) return "No due date";
   if (d < 0) return `Overdue by ${-d} day${d === -1 ? "" : "s"}`;
   if (d === 0) return "Due today";

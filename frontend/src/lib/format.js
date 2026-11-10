@@ -46,9 +46,13 @@ export function invoiceAmountCents(inv) {
   );
 }
 
-// Display-only: "paid" | "overdue" | "pending". Doesn't change any data.
+// Display-only: "paid" | "overdue" | "pending".
+// The server decides overdue (is_overdue); dates are only a fallback.
 export function invoiceState(inv) {
   if (inv?.status === "paid") return "paid";
+  if (typeof inv?.is_overdue === "boolean") {
+    return inv.is_overdue ? "overdue" : "pending";
+  }
   const d = daysUntilDue(inv?.due_date);
   return d !== null && d < 0 ? "overdue" : "pending";
 }

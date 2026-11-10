@@ -28,6 +28,7 @@ export function useLedgerFlowData() {
     text: "",
     isError: false,
   });
+  const [clientPhone, setClientPhone] = useState("");
   const [clientSubmitting, setClientSubmitting] = useState(false);
 
   const [selectedClientId, setSelectedClientId] = useState("");
@@ -128,6 +129,8 @@ export function useLedgerFlowData() {
     setClientName,
     clientEmail,
     setClientEmail,
+    clientPhone,
+    setClientPhone,
     clientMessage,
     setClientMessage,
     clientSubmitting,

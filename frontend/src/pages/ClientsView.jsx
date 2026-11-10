@@ -24,6 +24,8 @@ const initials = (name = "") =>
     .join("")
     .toUpperCase() || "?";
 
+const phoneOf = (client) => client?.phone_number ?? client?.phone ?? "";
+
 export function ClientsView({ data, handleClientSubmitInternal }) {
   const toast = useToast();
   const [query, setQuery] = useState("");
@@ -33,8 +35,7 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
 
   const clients = data.clientsList || [];
 
-  // TEMPORARY: matches by client_id when the API provides it, otherwise by name.
-  // Once findAll returns i.client_id, the name fallback is never used.
+  // Matches by client_id when the API provides it, otherwise by name.
   const invoicesFor = (client) =>
     (data.invoicesList || []).filter((inv) =>
       inv.client_id != null
@@ -64,7 +65,8 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
     ? clients.filter(
         (c) =>
           c.name?.toLowerCase().includes(q) ||
-          c.email?.toLowerCase().includes(q),
+          c.email?.toLowerCase().includes(q) ||
+          phoneOf(c).toLowerCase().includes(q),
       )
     : clients;
 
@@ -76,16 +78,17 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
     if (ok) setCreateOpen(false);
   };
 
-  const copyEmail = async (email) => {
+  const copyText = async (text, label) => {
     try {
-      await navigator.clipboard.writeText(email);
-      toast.success("Email copied");
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copied`);
     } catch {
       toast.error("Couldn't copy to the clipboard");
     }
   };
 
   const selStats = selected ? stats.get(selected.id) : null;
+  const selPhone = phoneOf(selected);
 
   return (
     <>
@@ -103,7 +106,7 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
       <div className="space-y-4">
         <SearchInput
           aria-label="Search clients"
-          placeholder="Search by name or email..."
+          placeholder="Search by name, email, or phone..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="w-full sm:max-w-xs"
@@ -128,7 +131,7 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
               title={q ? "No clients match your search" : "No clients yet"}
               description={
                 q
-                  ? "Try a different name or email."
+                  ? "Try a different name, email, or phone number."
                   : "Add your first client to start invoicing."
               }
               action={
@@ -144,6 +147,7 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
             <ul className="divide-y divide-border">
               {visible.map((client) => {
                 const s = stats.get(client.id);
+                const phone = phoneOf(client);
                 return (
                   <li key={client.id}>
                     <button
@@ -161,6 +165,11 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
                         <p className="truncate text-sm text-fg-muted">
                           {client.email}
                         </p>
+                        {phone && (
+                          <p className="num truncate text-xs text-fg-subtle">
+                            {phone}
+                          </p>
+                        )}
                       </div>
                       <div className="text-right">
                         <p
@@ -227,6 +236,14 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
             autoComplete="email"
             required
           />
+          <Input
+            label="Phone (optional)"
+            type="tel"
+            value={data.clientPhone || ""}
+            onChange={(e) => data.setClientPhone(e.target.value)}
+            placeholder="+1 555 123 4567"
+            autoComplete="tel"
+          />
         </form>
       </Modal>
 
@@ -235,18 +252,31 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
         open={!!selected}
         onOpenChange={(open) => !open && setSelected(null)}
         title={selected?.name ?? ""}
-        description={selected?.email}
+        description={
+          selected
+            ? `${selected.email}${selPhone ? ` · ${selPhone}` : ""}`
+            : undefined
+        }
         size="md"
         footer={
           selected && (
             <>
               <Button
                 variant="secondary"
-                onClick={() => copyEmail(selected.email)}
+                onClick={() => copyText(selected.email, "Email")}
               >
                 <Copy className="h-4 w-4" aria-hidden />
                 Copy email
               </Button>
+              {selPhone && (
+                <Button
+                  variant="secondary"
+                  onClick={() => copyText(selPhone, "Phone number")}
+                >
+                  <Copy className="h-4 w-4" aria-hidden />
+                  Copy phone
+                </Button>
+              )}
               <Button onClick={() => setSelected(null)}>Done</Button>
             </>
           )

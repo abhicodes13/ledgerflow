@@ -1,9 +1,12 @@
-import { Check, Lock } from "lucide-react";
-import { Badge, Button, Card } from "../components/ui";
+import { useState } from "react";
+import { Check, Lock, RefreshCw } from "lucide-react";
+import { Badge, Button, Card, useToast } from "../components/ui";
 import { PLAN, perMonthYearly, savings } from "../lib/plan";
 import { cn } from "../lib/cn";
 
 export function PaywallView({ billing }) {
+  const toast = useToast();
+  const [checking, setChecking] = useState(false);
   const pastDue = billing.status === "past_due";
   const busy = billing.busy;
 
@@ -25,6 +28,19 @@ export function PaywallView({ billing }) {
       featured: true,
     },
   ];
+
+  const recheck = async () => {
+    setChecking(true);
+    const next = await billing.refresh();
+    setChecking(false);
+    if (next?.status === "active") {
+      toast.success("You're all set. Welcome to LedgerFlow Pro!");
+    } else {
+      toast.info(
+        "No active plan yet. If you just paid, give it a few seconds and try again.",
+      );
+    }
+  };
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 py-4">
@@ -88,6 +104,19 @@ export function PaywallView({ billing }) {
           ))}
         </div>
       )}
+
+      <div className="text-center">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={recheck}
+          loading={checking}
+          disabled={!!busy}
+        >
+          <RefreshCw className="h-3.5 w-3.5" aria-hidden />I already paid,
+          refresh status
+        </Button>
+      </div>
 
       <ul className="mx-auto grid max-w-xl gap-2.5 text-sm sm:grid-cols-2">
         {PLAN.features.map((f) => (

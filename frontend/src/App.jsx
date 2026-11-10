@@ -288,6 +288,11 @@ function App() {
             ),
           },
         ]);
+      } else if (resData.type === "action_deck") {
+        setChatMessages((prev) => [
+          ...prev,
+          { type: "action_deck", sender: "ai", text: resData.message },
+        ]);
       } else if (resData.type === "approval_required") {
         setChatMessages((prev) => [
           ...prev,
@@ -400,6 +405,8 @@ function App() {
           setIsMobileChatOpen={setIsMobileChatOpen}
           isConsoleVisible={isConsoleVisible}
           setIsConsoleVisible={setIsConsoleVisible}
+          clients={data.clientsList}
+          invoices={data.invoicesList}
         />
       }
     >

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import {
+  BarChart3,
   CheckCircle2,
   FileText,
+  Mail,
   PanelRightClose,
   Send,
   ShieldCheck,
@@ -10,7 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/cn";
 import { Button } from "./ui";
-import { DetailsCard, RichText } from "./ChatContent";
+import { ActionDetails, RichText, describeAction } from "./ChatContent";
 
 export function AIConsole({
   chatInput,
@@ -24,6 +26,8 @@ export function AIConsole({
   setActiveTab,
   setIsMobileChatOpen,
   setIsConsoleVisible,
+  clients = [],
+  invoices = [],
 }) {
   // Index of the approval currently being executed (blocks double clicks)
   const [pending, setPending] = useState(null);
@@ -73,13 +77,26 @@ export function AIConsole({
       label: "Draft an invoice",
       run: () => {
         setActiveTab("billing");
-        setChatInput("Draft an invoice for Acme Corp amount $2000 ");
+        setChatInput("Draft an invoice for ");
       },
     },
     {
       icon: CheckCircle2,
       label: "Mark an invoice as paid",
-      run: () => setActiveTab("billing"),
+      run: () => {
+        setActiveTab("billing");
+        setChatInput("Mark invoice as paid: ");
+      },
+    },
+    {
+      icon: Mail,
+      label: "Send overdue reminders",
+      run: () => setChatInput("Send reminders for my overdue invoices"),
+    },
+    {
+      icon: BarChart3,
+      label: "How is my business doing?",
+      run: () => setChatInput("How is my business doing?"),
     },
   ];
 
@@ -118,42 +135,23 @@ export function AIConsole({
           const isUser = msg.sender === "user";
 
           if (msg.type === "action_deck") {
-            const confirmed =
-              !isUser && /^Action Confirmed:/i.test(msg.text || "");
-
-            if (confirmed) {
-              return (
-                <div
-                  key={index}
-                  className="flex items-start gap-2.5 rounded-xl border border-success/30 bg-success-soft p-3.5 text-sm text-fg animate-fadeIn"
-                >
-                  <CheckCircle2
-                    className="mt-0.5 h-4 w-4 shrink-0 text-success"
-                    aria-hidden
-                  />
-                  <div className="min-w-0">
-                    <RichText
-                      text={msg.text.replace(/^Action Confirmed:\s*/i, "")}
-                    />
-                  </div>
-                </div>
-              );
-            }
-
             return (
-              <div
-                key={index}
-                className={cn("flex animate-fadeIn", isUser && "justify-end")}
-              >
-                <div
-                  className={cn(
-                    "max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm",
-                    isUser
-                      ? "rounded-br-sm bg-accent text-accent-fg"
-                      : "rounded-tl-sm bg-surface-2 text-fg",
-                  )}
-                >
-                  {isUser ? msg.text : <RichText text={msg.text} />}
+              <div key={index} className="space-y-3 animate-fadeIn">
+                <div className="max-w-[90%] rounded-2xl rounded-tl-sm bg-surface-2 px-3.5 py-2.5 text-sm text-fg">
+                  {msg.text}
+                </div>
+                <div className="space-y-2">
+                  {QUICK_ACTIONS.map(({ icon: Icon, label, run }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={run}
+                      className="flex w-full items-center gap-3 rounded-xl border border-border px-3.5 py-2.5 text-left text-sm font-medium text-fg transition-colors hover:border-accent hover:bg-accent-soft"
+                    >
+                      <Icon className="h-4 w-4 text-accent" aria-hidden />
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </div>
             );
@@ -161,19 +159,33 @@ export function AIConsole({
 
           if (msg.type === "approval_box") {
             const busy = pending === index;
+            const d = describeAction(msg.action, msg.data, {
+              clients,
+              invoices,
+            });
+            const ActionIcon = d.icon;
             return (
               <div
                 key={index}
                 className="space-y-3 rounded-xl border border-accent/40 bg-accent-soft/50 p-4 animate-fadeIn"
               >
-                <div className="flex items-center gap-2 text-sm font-semibold text-accent">
-                  <ShieldCheck className="h-4 w-4" aria-hidden />
-                  Please confirm
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-accent">
+                    <ActionIcon className="h-4 w-4" aria-hidden />
+                    {d.title}
+                  </div>
+                  <span className="flex items-center gap-1 text-xs text-fg-subtle">
+                    <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+                    Needs your OK
+                  </span>
                 </div>
+
                 <div className="text-sm text-fg">
                   <RichText text={msg.text} />
                 </div>
-                <DetailsCard data={msg.data} />
+
+                <ActionDetails details={d} />
+
                 <div className="flex gap-2">
                   <Button
                     size="sm"
@@ -182,7 +194,7 @@ export function AIConsole({
                     disabled={pending !== null}
                     onClick={() => approve(index, msg)}
                   >
-                    Confirm
+                    {d.confirmLabel}
                   </Button>
                   <Button
                     size="sm"
@@ -197,6 +209,28 @@ export function AIConsole({
             );
           }
 
+          const confirmed =
+            !isUser && /^Action Confirmed:/i.test(msg.text || "");
+
+          if (confirmed) {
+            return (
+              <div
+                key={index}
+                className="flex items-start gap-2.5 rounded-xl border border-success/30 bg-success-soft p-3.5 text-sm text-fg animate-fadeIn"
+              >
+                <CheckCircle2
+                  className="mt-0.5 h-4 w-4 shrink-0 text-success"
+                  aria-hidden
+                />
+                <div className="min-w-0">
+                  <RichText
+                    text={msg.text.replace(/^Action Confirmed:\s*/i, "")}
+                  />
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div
               key={index}
@@ -204,13 +238,13 @@ export function AIConsole({
             >
               <div
                 className={cn(
-                  "max-w-[88%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm",
+                  "max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm",
                   isUser
                     ? "rounded-br-sm bg-accent text-accent-fg"
                     : "rounded-tl-sm bg-surface-2 text-fg",
                 )}
               >
-                {msg.text}
+                {isUser ? msg.text : <RichText text={msg.text} />}
               </div>
             </div>
           );

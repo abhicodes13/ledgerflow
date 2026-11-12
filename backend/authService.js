@@ -1,6 +1,9 @@
 const pool = require("./db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const sha256 = (s) => crypto.createHash("sha256").update(s).digest("hex");
+const RESET_TTL_MINUTES = 30;
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET || JWT_SECRET.length < 32) {
@@ -18,7 +21,15 @@ class AuthError extends Error {
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 // Compared against when the username doesn't exist, so timing doesn't reveal it
 const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 10);
-
+function validatePassword(password) {
+  if (
+    typeof password !== "string" ||
+    password.length < 8 ||
+    Buffer.byteLength(password) > 72
+  ) {
+    throw new AuthError("Password must be 8 to 72 characters");
+  }
+}
 const authService = {
   AuthError,
 
@@ -89,6 +100,69 @@ const authService = {
       token,
       user: { id: user.id, username: user.username, email: user.email },
     };
+  },
+  // Returns { email, username, token } if the account exists, otherwise null.
+  async createPasswordReset(email) {
+    const cleanEmail =
+      typeof email === "string" ? email.trim().toLowerCase() : "";
+    if (!EMAIL_RE.test(cleanEmail) || cleanEmail.length > 255) return null;
+
+    const { rows } = await pool.query(
+      "SELECT id, username, email FROM users WHERE email = $1",
+      [cleanEmail],
+    );
+    const user = rows[0];
+    if (!user) return null;
+
+    const token = crypto.randomBytes(32).toString("hex");
+    await pool.query(
+      "UPDATE password_resets SET used_at = now() WHERE user_id = $1 AND used_at IS NULL",
+      [user.id],
+    );
+    await pool.query(
+      `INSERT INTO password_resets (user_id, token_hash, expires_at)
+       VALUES ($1, $2, now() + make_interval(mins => $3))`,
+      [user.id, sha256(token), RESET_TTL_MINUTES],
+    );
+    return { email: user.email, username: user.username, token };
+  },
+
+  async resetPassword(token, newPassword) {
+    if (typeof token !== "string" || !/^[0-9a-f]{64}$/.test(token)) {
+      throw new AuthError("This reset link is invalid or has expired.");
+    }
+    validatePassword(newPassword);
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      // Claim the token and change the password together, or neither happens
+      const claimed = await client.query(
+        `UPDATE password_resets SET used_at = now()
+         WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+         RETURNING user_id`,
+        [sha256(token)],
+      );
+      if (claimed.rowCount === 0) {
+        throw new AuthError("This reset link is invalid or has expired.");
+      }
+      const userId = claimed.rows[0].user_id;
+      await client.query("UPDATE users SET password_hash = $1 WHERE id = $2", [
+        passwordHash,
+        userId,
+      ]);
+      await client.query(
+        "UPDATE password_resets SET used_at = now() WHERE user_id = $1 AND used_at IS NULL",
+        [userId],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
   },
 };
 

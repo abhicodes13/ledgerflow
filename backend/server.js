@@ -27,7 +27,7 @@ const checkSubscription = require("./subscriptionMiddleware"); // paywall: use A
 const paymentRouter = require("./payment");
 const { AppError } = require("./errors");
 const { generateInvoicePdfStream } = require("./utils/invoiceGenerator");
-
+const { sendResetEmail } = require("./resetEmail");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -149,6 +149,47 @@ app.post("/api/auth/login", async (req, res) => {
     return res
       .status(500)
       .json({ success: false, error: "Something went wrong" });
+  }
+});
+app.post(
+  "/api/auth/forgot-password",
+  rateLimit({ windowMs: 60 * 60 * 1000, max: 5 }),
+  async (req, res) => {
+    try {
+      const reset = await authService.createPasswordReset(req.body?.email);
+      if (reset) {
+        // Not awaited, so response time doesn't reveal whether the account exists
+        sendResetEmail({
+          to: reset.email,
+          username: reset.username,
+          token: reset.token,
+        }).catch((e) => console.error("Reset email failed:", e.message));
+      }
+    } catch (e) {
+      console.error("forgot-password failed:", e);
+    }
+    return res.json({
+      success: true,
+      message: "If an account exists for that email, we've sent a reset link.",
+    });
+  },
+);
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  try {
+    await authService.resetPassword(req.body?.token, req.body?.newPassword);
+    return res.json({
+      success: true,
+      message: "Password updated. You can log in now.",
+    });
+  } catch (e) {
+    if (e instanceof authService.AuthError) {
+      return res.status(e.status).json({ success: false, error: e.message });
+    }
+    console.error("reset-password failed:", e);
+    return res
+      .status(500)
+      .json({ success: false, error: "Could not reset password." });
   }
 });
 

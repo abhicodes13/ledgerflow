@@ -9,9 +9,21 @@ const { AppError } = require("./errors");
 // (Default is the value used before; verify it against Google's current docs.)
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 const MAX_STEPS = 5; // model calls per user message
-const MAX_HISTORY = 12; // previous chat messages the model can see
+const MAX_HISTORY = 8; // previous chat messages the model can see
+const MAX_HISTORY_CHARS = 1000; // per history message
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 const THINKING_LEVEL = process.env.GEMINI_THINKING_LEVEL; // "low", "medium", or "high"
+
+// Spending limits (all tokens count input + output + thinking)
+const MONTHLY_TOKEN_LIMIT = Number(
+  process.env.AI_MONTHLY_TOKEN_LIMIT || 2000000,
+); // per user, per calendar month
+const GLOBAL_DAILY_CALL_LIMIT = Number(
+  process.env.AI_GLOBAL_DAILY_CALLS || 8000,
+); // all users, rolling 24 hours (each model call = 1)
+const GLOBAL_MONTHLY_TOKEN_LIMIT = Number(
+  process.env.AI_GLOBAL_MONTHLY_TOKENS || 7000000,
+); // all users, calendar month. Raise this when you add Gemini credit.
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -56,6 +68,78 @@ function isRealDate(ymd) {
 
 // Makes % and _ in user text match literally inside ILIKE
 const escapeLike = (s) => s.replace(/[\\%_]/g, "\\$&");
+
+// ---------------------------------------------------------------------------
+// Approvals and usage (tables: pending_actions, ai_usage)
+// ---------------------------------------------------------------------------
+
+// Saves a proposal on the server. The browser only ever gets the returned id,
+// and /api/chat/confirm loads the saved payload by id.
+async function createPending(userId, actionType, payload) {
+  const { rows } = await pool.query(
+    `INSERT INTO pending_actions (user_id, action_type, payload)
+     VALUES ($1, $2, $3::jsonb) RETURNING id`,
+    [userId, actionType, JSON.stringify(payload)],
+  );
+  return rows[0].id;
+}
+
+// One row per model call. Never lets a logging problem break the chat.
+async function logUsage(userId, response) {
+  const u = response?.usageMetadata || {};
+  try {
+    await pool.query(
+      `INSERT INTO ai_usage
+         (user_id, model, input_tokens, cached_tokens, output_tokens, thought_tokens)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        userId,
+        GEMINI_MODEL,
+        u.promptTokenCount || 0,
+        u.cachedContentTokenCount || 0,
+        u.candidatesTokenCount || 0,
+        u.thoughtsTokenCount || 0,
+      ],
+    );
+  } catch (error) {
+    console.error("usage log failed:", error.message);
+  }
+}
+
+// If these checks themselves fail (for example the table is missing), the chat
+// keeps working and the problem is logged loudly instead of causing a 500.
+async function overBudget(userId) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT COALESCE(SUM(input_tokens + output_tokens + thought_tokens), 0)::BIGINT AS used
+       FROM ai_usage
+       WHERE user_id = $1 AND created_at >= date_trunc('month', now())`,
+      [userId],
+    );
+    return Number(rows[0].used) >= MONTHLY_TOKEN_LIMIT;
+  } catch (error) {
+    console.error("budget check failed:", error.message);
+    return false;
+  }
+}
+
+async function globalPaused() {
+  try {
+    const day = await pool.query(
+      "SELECT COUNT(*)::INT AS n FROM ai_usage WHERE created_at > now() - interval '24 hours'",
+    );
+    if (day.rows[0].n >= GLOBAL_DAILY_CALL_LIMIT) return true;
+
+    const month = await pool.query(
+      `SELECT COALESCE(SUM(input_tokens + output_tokens + thought_tokens), 0)::BIGINT AS used
+       FROM ai_usage WHERE created_at >= date_trunc('month', now())`,
+    );
+    return Number(month.rows[0].used) >= GLOBAL_MONTHLY_TOKEN_LIMIT;
+  } catch (error) {
+    console.error("global budget check failed:", error.message);
+    return false;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // System instruction (rebuilt per request so "today" is always right)
@@ -175,7 +259,8 @@ async function getBusinessMetrics(userId) {
 
 // ---------------------------------------------------------------------------
 // WRITE tools: they only PROPOSE. Each one verifies against the database first,
-// so the approval card shows real names and amounts. They return one of:
+// so the approval card shows real names and amounts, then saves the proposal
+// in pending_actions and hands the browser only its id. They return one of:
 //   { proposal }  an approval card for the user (ends the loop)
 //   { text }      a final plain answer (ends the loop)
 //   { error }     a problem the model should fix or explain (loop continues)
@@ -202,12 +287,18 @@ async function registerNewClient(userId, args) {
     };
   }
 
+  const pendingActionId = await createPending(userId, "create_client", {
+    name,
+    email,
+    phone_number: phone,
+  });
+
   return {
     proposal: {
       type: "approval_required",
       action: "create_client",
       message: `Add **${name}** (${email}${phone ? `, ${phone}` : ""}) as a new client?`,
-      data: { name, email, phone_number: phone },
+      data: { pendingActionId },
     },
   };
 }
@@ -218,6 +309,7 @@ async function draftNewInvoice(userId, args) {
     return { error: "clientId is required. Use findClients to look it up." };
   }
 
+  // 1. Look the client up (must belong to this user)
   const client = (
     await pool.query(
       "SELECT id, name FROM clients WHERE id = $1 AND user_id = $2 AND archived_at IS NULL",
@@ -230,6 +322,7 @@ async function draftNewInvoice(userId, args) {
     };
   }
 
+  // 2. Validate the rest of the input
   if (!isRealDate(args.dueDate)) {
     return { error: "dueDate must be a real date formatted YYYY-MM-DD." };
   }
@@ -247,20 +340,23 @@ async function draftNewInvoice(userId, args) {
     0,
   );
 
+  // 3. Only now save the proposal (client is guaranteed to exist here)
+  const pendingActionId = await createPending(userId, "create_invoice", {
+    client_id: client.id,
+    due_date: args.dueDate,
+    items: items.map((i) => ({
+      description: i.description,
+      quantity: i.quantity,
+      price: i.unitAmountCents / 100,
+    })),
+  });
+
   return {
     proposal: {
       type: "approval_required",
       action: "create_invoice",
       message: `Create an invoice for **${client.name}**: ${items.length} line item(s), total **${money(totalCents)}**, due **${formatDate(args.dueDate)}**. The invoice number is assigned automatically. Create it?`,
-      data: {
-        client_id: client.id,
-        due_date: args.dueDate,
-        items: items.map((i) => ({
-          description: i.description,
-          quantity: i.quantity,
-          price: i.unitAmountCents / 100,
-        })),
-      },
+      data: { pendingActionId },
     },
   };
 }
@@ -308,17 +404,22 @@ async function settleInvoiceBalance(userId, args) {
     };
   }
 
+  const pendingActionId = await createPending(userId, "settle_invoice", {
+    invoiceId: invoice.id,
+  });
+
   return {
     proposal: {
       type: "approval_required",
       action: "settle_invoice",
       message: `Mark invoice **${invoice.invoice_number}** for **${invoice.client_name}** (${money(invoice.total_cents)}) as paid?`,
-      data: { invoiceId: invoice.id },
+      data: { pendingActionId },
     },
   };
 }
 
 // The server decides who gets contacted; the model only chooses the channel.
+// (reminderService already stores its own pending action and returns its id.)
 async function sendInvoiceReminders(userId, args) {
   if (args.channel && String(args.channel).toLowerCase() !== "email") {
     return {
@@ -527,7 +628,7 @@ function toContents(history) {
     )
     .map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.text.slice(0, 2000) }],
+      parts: [{ text: m.text.slice(0, MAX_HISTORY_CHARS) }],
     }));
   // A conversation must start with the user's turn
   while (contents.length && contents[0].role === "model") contents.shift();
@@ -539,6 +640,22 @@ function toContents(history) {
 // first proposal (or final text) ends it. Returns what the chat route sends back.
 // ---------------------------------------------------------------------------
 async function run({ userId, message, history }) {
+  // Spending guards run before any model call
+  if (await globalPaused()) {
+    return {
+      type: "text",
+      message:
+        "The assistant is at capacity right now. Please try again in a bit. Everything else in the app still works.",
+    };
+  }
+  if (await overBudget(userId)) {
+    return {
+      type: "text",
+      message:
+        "You've reached this month's AI assistant limit. It resets on the 1st, and everything else in the app still works.",
+    };
+  }
+
   const contents = [
     ...toContents(history),
     { role: "user", parts: [{ text: message }] },
@@ -556,6 +673,8 @@ async function run({ userId, message, history }) {
           : {}),
       },
     });
+
+    await logUsage(userId, response);
 
     const calls = response.functionCalls || [];
     if (calls.length === 0) {

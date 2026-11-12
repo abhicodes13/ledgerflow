@@ -7,8 +7,11 @@ const required = [
   "STRIPE_WEBHOOK_SECRET",
   "JWT_SECRET",
   "RESEND_API_KEY",
-  "FRONTEND_PRODUCTION_URL",
 ];
+// The frontend URL is only mandatory in production (locally it falls back to localhost)
+if (process.env.NODE_ENV === "production") {
+  required.push("FRONTEND_PRODUCTION_URL");
+}
 for (const k of required)
   if (!process.env[k]) throw new Error(`Missing env var: ${k}`);
 const express = require("express");
@@ -61,12 +64,19 @@ function sendError(res, error, label) {
 // =========================================================================
 // MIDDLEWARE (order matters)
 // =========================================================================
+// Origins are trimmed and trailing slashes removed, so a stray "/" in an env
+// variable can't silently break CORS. Add more with CORS_EXTRA_ORIGINS
+// (comma separated), for example the www version of your domain.
 const allowedOrigins = [
   process.env.FRONTEND_PRODUCTION_URL,
+  ...(process.env.CORS_EXTRA_ORIGINS || "").split(","),
   ...(process.env.NODE_ENV !== "production"
     ? ["http://localhost:5173", "http://localhost:3000"]
     : []),
-].filter(Boolean);
+]
+  .map((s) => (s || "").trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
 app.set("trust proxy", 1);
 app.use(helmet());
 // CORS first, so even rate-limit rejections carry CORS headers
@@ -77,7 +87,9 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        callback(new Error("CORS policy violation"));
+        // The browser blocks the request; the server just logs it (no 500)
+        console.warn("CORS blocked origin:", origin);
+        callback(null, false);
       }
     },
     credentials: true,
@@ -90,7 +102,6 @@ app.use(
 app.use("/api/auth", rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }));
 // Limit AI requests per IP, since every call costs money
 app.use("/api/chat", rateLimit({ windowMs: 15 * 60 * 1000, max: 60 }));
-// If you put this behind a load balancer (ALB), also add: app.set("trust proxy", 1);
 
 // Mounted BEFORE express.json() on purpose: Stripe webhooks need the raw body.
 app.use("/api/payment", paymentRouter);
@@ -151,6 +162,7 @@ app.post("/api/auth/login", async (req, res) => {
       .json({ success: false, error: "Something went wrong" });
   }
 });
+
 app.post(
   "/api/auth/forgot-password",
   rateLimit({ windowMs: 60 * 60 * 1000, max: 5 }),
@@ -502,6 +514,13 @@ app.post(
             "My language processor is experiencing heavy traffic right now. Please try again in a few moments!",
         });
       }
+      if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
+        return res.status(200).json({
+          type: "text",
+          message:
+            "The assistant is busy right now. Please try again in a minute.",
+        });
+      }
 
       console.error("AI chat failed:", error);
       return res
@@ -513,7 +532,43 @@ app.post(
 
 // =========================================================================
 // AI AGENT: confirm (runs the approved action through the normal services)
+//
+// Proposals are saved in pending_actions by the agent. The browser sends back
+// only the id, and this route loads what was saved, so the payload can't be
+// changed on the way and an approval can only be used once.
 // =========================================================================
+const toId = (v) => {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
+// Atomically claims a pending proposal: it must belong to this user, match the
+// action, still be pending, and not be expired. Returns the saved payload or null.
+async function claimPending(userId, actionType, id) {
+  const pid = toId(id);
+  if (!pid) return null;
+  const { rows } = await pool.query(
+    `UPDATE pending_actions SET status = 'confirmed'
+     WHERE id = $1 AND user_id = $2 AND action_type = $3
+       AND status = 'pending' AND expires_at > now()
+     RETURNING payload`,
+    [pid, userId, actionType],
+  );
+  return rows[0]?.payload || null;
+}
+
+// Records the outcome. A problem here must never turn a finished action into an error.
+async function finishPending(id, status) {
+  try {
+    await pool.query(
+      "UPDATE pending_actions SET status = $2, resolved_at = now() WHERE id = $1",
+      [toId(id), status],
+    );
+  } catch (error) {
+    console.error("finishPending failed:", error.message);
+  }
+}
+
 app.post(
   "/api/chat/confirm",
   authenticateToken,
@@ -527,38 +582,50 @@ app.post(
         throw new AppError("Missing confirmation payload", 400);
       }
 
-      if (action === "create_client") {
-        const client = await clientService.registerClient(
-          userId,
-          data.name,
-          data.email,
-          data.phone_number,
-        );
-        return res.json({ message: `Client '${client.name}' created.` });
-      }
+      if (
+        ["create_client", "create_invoice", "settle_invoice"].includes(action)
+      ) {
+        const id = data.pendingActionId;
+        const p = await claimPending(userId, action, id);
+        if (!p) {
+          throw new AppError(
+            "This action expired or was already confirmed.",
+            409,
+          );
+        }
 
-      if (action === "create_invoice") {
-        const invoice = await invoiceService.createFullInvoice(
-          userId,
-          data.client_id,
-          data.invoice_number,
-          data.due_date,
-          data.items,
-        );
-        return res.json({
-          message: `Invoice ${invoice.invoice_number} created with ${invoice.items.length} line item(s).`,
-        });
-      }
-
-      if (action === "settle_invoice") {
-        const invoice = await invoiceService.settleInvoiceBalance(
-          data.invoiceId,
-          userId,
-        );
-        return res.json({
-          success: true,
-          message: `Invoice ${invoice.invoice_number} marked as PAID.`,
-        });
+        try {
+          let message;
+          if (action === "create_client") {
+            const client = await clientService.registerClient(
+              userId,
+              p.name,
+              p.email,
+              p.phone_number,
+            );
+            message = `Client '${client.name}' created.`;
+          } else if (action === "create_invoice") {
+            const invoice = await invoiceService.createFullInvoice(
+              userId,
+              p.client_id,
+              p.invoice_number,
+              p.due_date,
+              p.items,
+            );
+            message = `Invoice ${invoice.invoice_number} created with ${invoice.items.length} line item(s).`;
+          } else {
+            const invoice = await invoiceService.settleInvoiceBalance(
+              p.invoiceId,
+              userId,
+            );
+            message = `Invoice ${invoice.invoice_number} marked as PAID.`;
+          }
+          await finishPending(id, "executed");
+          return res.json({ success: true, message });
+        } catch (error) {
+          await finishPending(id, "failed");
+          throw error;
+        }
       }
 
       if (action === "send_reminders") {

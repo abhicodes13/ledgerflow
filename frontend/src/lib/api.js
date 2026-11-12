@@ -48,3 +48,25 @@ export function saveBlob(blob, filename) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// POST JSON without ever throwing: plain-text bodies, empty bodies, and 429s all come back as a result.
+export async function postJson(url, body) {
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return { ok: false, status: 0, data: null, network: true };
+  }
+  const text = await res.text().catch(() => "");
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null; // not JSON (for example a rate-limit message)
+  }
+  return { ok: res.ok, status: res.status, data, network: false };
+}

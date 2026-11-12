@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Navigate,
   Outlet,
@@ -10,11 +10,14 @@ import {
 import { useLedgerFlowData } from "./hooks/useLedgerFlowData";
 import { useTheme } from "./hooks/useTheme";
 import { useBilling, usePaymentReturn } from "./hooks/useBilling";
+import { useReminders } from "./hooks/useReminders";
+import { useAssistant } from "./hooks/useAssistant";
 import { useToast } from "./components/ui";
 import { AppShell } from "./components/layout/AppShell";
 import { AuthScreen } from "./components/layout/AuthScreen";
 import { RequireAuth } from "./components/RequireAuth";
 import { AIConsole } from "./components/AIConsole";
+import { ReminderModal } from "./components/ReminderModal";
 import { LandingPage } from "./pages/LandingPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PaywallView } from "./pages/PaywallView";
@@ -23,21 +26,26 @@ import { InvoicesView } from "./pages/InvoicesView";
 import { ClientsView } from "./pages/ClientsView";
 import { AutomationsView } from "./pages/AutomationsView";
 import { SettingsView } from "./pages/SettingsView";
-import { invoiceState } from "./lib/format";
-import { tabToPath } from "./lib/routes";
-import { errorMessage, readError } from "./lib/api";
-import { API_ERROR_EVENT } from "./lib/apiGuard";
-import { useReminders } from "./hooks/useReminders";
-import { ReminderModal } from "./components/ReminderModal";
 import { EstimatesView } from "./pages/EstimatesView";
 import { SignaturesView } from "./pages/SignaturesView";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { invoiceState } from "./lib/format";
+import { tabToPath } from "./lib/routes";
+import { errorMessage, readError } from "./lib/api";
+import { API_ERROR_EVENT } from "./lib/apiGuard";
 
 function App() {
   const data = useLedgerFlowData();
   const { theme, setTheme } = useTheme();
   const toast = useToast();
+  const billing = useBilling({
+    apiBase: data.API_BASE,
+    token: data.token,
+    toast,
+  });
+  usePaymentReturn(billing, toast);
+
   const reminders = useReminders({
     apiBase: data.API_BASE,
     token: data.token,
@@ -46,16 +54,20 @@ function App() {
       data.fetchMetrics();
     },
   });
-  const billing = useBilling({
+
+  const assistant = useAssistant({
     apiBase: data.API_BASE,
     token: data.token,
-    toast,
+    // After a confirmed (or already-used) action, refresh what's on screen
+    onChanged: () => {
+      data.fetchMetrics();
+      data.fetchInvoicesList();
+      data.fetchClientsList();
+    },
   });
-  usePaymentReturn(billing, toast);
 
   const location = useLocation();
   const navigate = useNavigate();
-  // Used by the assistant shortcuts and dashboard buttons: setActiveTab("billing")
   const setActiveTab = (id) => navigate(tabToPath(id));
 
   // Assistant panel visibility
@@ -70,25 +82,13 @@ function App() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authMessage, setAuthMessage] = useState({ text: "", isError: false });
 
-  // Chat state
-  const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const chatBottomRef = useRef(null);
-
-  const [chatMessages, setChatMessages] = useState([
-    {
-      type: "action_deck",
-      sender: "ai",
-      text: "Hi! I can add clients, draft invoices, and mark payments as received. Pick a shortcut below or just type what you need.",
-    },
-  ]);
-
   // React to auth and billing failures from any API call
   useEffect(() => {
     const onApiError = (e) => {
       const { status, code, billingStatus } = e.detail;
       if (code === "SUBSCRIPTION_REQUIRED") {
         billing.setStatus(billingStatus || "inactive"); // shows the paywall
+        setIsMobileChatOpen(false); // so the paywall isn't hidden behind the chat
       } else if (status === 401) {
         data.handleLogout();
         toast.error("Your session has ended. Please sign in again.");
@@ -102,22 +102,21 @@ function App() {
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     if (!authUsername || !authPassword || (isRegistering && !authEmail)) {
-      setAuthMessage({
-        text: "Please fill in all the fields.",
-        isError: true,
-      });
+      setAuthMessage({ text: "Please fill in all the fields.", isError: true });
       return;
     }
     setAuthSubmitting(true);
     setAuthMessage({ text: "", isError: false });
 
-    const endpointPath = isRegistering ? "api/auth/register" : "api/auth/login";
+    const endpointPath = isRegistering
+      ? "/api/auth/register"
+      : "/api/auth/login";
 
     const body = { username: authUsername, password: authPassword };
     if (isRegistering) body.email = authEmail.trim();
 
     try {
-      const res = await fetch(`${data.API_BASE}/${endpointPath}`, {
+      const res = await fetch(`${data.API_BASE}${endpointPath}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -266,114 +265,9 @@ function App() {
     }
   };
 
-  // Send a chat message
-  const handleSendChatMessage = async (e) => {
-    e.preventDefault();
-    if (!chatInput.trim()) return;
-    const userText = chatInput;
-    setChatMessages((prev) => [
-      ...prev,
-      { type: "text", sender: "user", text: userText },
-    ]);
-    setChatInput("");
-    setChatLoading(true);
-    try {
-      const res = await fetch(`${data.API_BASE}/api/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${data.token}`,
-        },
-        body: JSON.stringify({ message: userText }),
-      });
-      const resData = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            type: "text",
-            sender: "ai",
-            text: errorMessage(
-              resData,
-              "Sorry, I couldn't handle that request.",
-            ),
-          },
-        ]);
-      } else if (resData.type === "action_deck") {
-        setChatMessages((prev) => [
-          ...prev,
-          { type: "action_deck", sender: "ai", text: resData.message },
-        ]);
-      } else if (resData.type === "approval_required") {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            type: "approval_box",
-            sender: "ai",
-            text: resData.message,
-            action: resData.action,
-            data: resData.data,
-          },
-        ]);
-      } else {
-        setChatMessages((prev) => [
-          ...prev,
-          { type: "text", sender: "ai", text: resData.message },
-        ]);
-      }
-    } catch {
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          type: "text",
-          sender: "ai",
-          text: "Error connecting to core AI route.",
-        },
-      ]);
-    } finally {
-      setChatLoading(false);
-    }
-  };
-
-  // Approve an AI-proposed action
-  const handleApproveAIAction = async (msgIndex, action, payload) => {
-    try {
-      const res = await fetch(`${data.API_BASE}/api/chat/confirm`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${data.token}`,
-        },
-        body: JSON.stringify({ action, data: payload }),
-      });
-      const resData = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // Keep the confirmation card so the user can retry or cancel
-        toast.error(errorMessage(resData, "Couldn't run that action."));
-        return;
-      }
-      setChatMessages((prev) =>
-        prev.map((msg, idx) =>
-          idx === msgIndex
-            ? {
-                type: "text",
-                sender: "ai",
-                text: `Action Confirmed: ${resData.message || "Done."}`,
-              }
-            : msg,
-        ),
-      );
-      data.fetchMetrics();
-      data.fetchInvoicesList();
-      data.fetchClientsList();
-    } catch (err) {
-      toast.error(`Couldn't run that action: ${err.message}`);
-    }
-  };
   // Used by the Automations shortcuts: fill the chat and show the assistant
   const askAssistant = (text) => {
-    setChatInput(text);
+    assistant.setInput(text);
     if (window.matchMedia("(min-width: 1280px)").matches) {
       setIsConsoleVisible(true);
     } else {
@@ -413,21 +307,19 @@ function App() {
       onCloseDrawer={() => setIsMobileChatOpen(false)}
       assistant={
         <AIConsole
-          chatInput={chatInput}
-          setChatInput={setChatInput}
-          chatMessages={chatMessages}
-          setChatMessages={setChatMessages}
-          chatLoading={chatLoading}
-          chatBottomRef={chatBottomRef}
-          handleSendChatMessage={handleSendChatMessage}
-          handleApproveAIAction={handleApproveAIAction}
-          setActiveTab={setActiveTab}
-          isMobileChatOpen={isMobileChatOpen}
-          setIsMobileChatOpen={setIsMobileChatOpen}
-          isConsoleVisible={isConsoleVisible}
-          setIsConsoleVisible={setIsConsoleVisible}
+          messages={assistant.messages}
+          input={assistant.input}
+          setInput={assistant.setInput}
+          loading={assistant.loading}
+          onSend={assistant.send}
+          onConfirm={assistant.confirm}
+          onCancel={assistant.cancel}
           clients={data.clientsList}
           invoices={data.invoicesList}
+          onClose={() => {
+            setIsConsoleVisible(false);
+            setIsMobileChatOpen(false);
+          }}
         />
       }
     >
@@ -435,11 +327,13 @@ function App() {
       <ReminderModal reminders={reminders} />
     </AppShell>
   );
+
   // Shows "Password updated" after a reset (passed through the router's state)
   const loginMessage =
     !authMessage.text && !isRegistering && location.state?.notice
       ? { text: location.state.notice, isError: false }
       : authMessage;
+
   const loginElement = data.token ? (
     <Navigate to={location.state?.from?.pathname ?? "/app"} replace />
   ) : (
@@ -565,7 +459,6 @@ function App() {
             path="signatures"
             element={<SignaturesView currentUser={data.currentUser} />}
           />
-
           <Route
             path="*"
             element={<NotFoundPage home="/app" label="Back to dashboard" />}

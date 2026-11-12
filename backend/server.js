@@ -502,6 +502,13 @@ app.post(
             "My language processor is experiencing heavy traffic right now. Please try again in a few moments!",
         });
       }
+      if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
+        return res.status(200).json({
+          type: "text",
+          message:
+            "The assistant is busy right now. Please try again in a minute.",
+        });
+      }
 
       console.error("AI chat failed:", error);
       return res
@@ -514,6 +521,29 @@ app.post(
 // =========================================================================
 // AI AGENT: confirm (runs the approved action through the normal services)
 // =========================================================================
+const toId = (v) => {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
+async function claimPending(userId, actionType, id) {
+  const pid = toId(id);
+  if (!pid) return null;
+  const { rows } = await pool.query(
+    `UPDATE pending_actions SET status = 'confirmed'
+     WHERE id = $1 AND user_id = $2 AND action_type = $3
+       AND status = 'pending' AND expires_at > now()
+     RETURNING payload`,
+    [pid, userId, actionType],
+  );
+  return rows[0]?.payload || null;
+}
+const finishPending = (id, status) =>
+  pool.query(
+    "UPDATE pending_actions SET status = $2, resolved_at = now() WHERE id = $1",
+    [Number(id), status],
+  );
+
 app.post(
   "/api/chat/confirm",
   authenticateToken,
@@ -527,38 +557,48 @@ app.post(
         throw new AppError("Missing confirmation payload", 400);
       }
 
-      if (action === "create_client") {
-        const client = await clientService.registerClient(
-          userId,
-          data.name,
-          data.email,
-          data.phone_number,
-        );
-        return res.json({ message: `Client '${client.name}' created.` });
-      }
-
-      if (action === "create_invoice") {
-        const invoice = await invoiceService.createFullInvoice(
-          userId,
-          data.client_id,
-          data.invoice_number,
-          data.due_date,
-          data.items,
-        );
-        return res.json({
-          message: `Invoice ${invoice.invoice_number} created with ${invoice.items.length} line item(s).`,
-        });
-      }
-
-      if (action === "settle_invoice") {
-        const invoice = await invoiceService.settleInvoiceBalance(
-          data.invoiceId,
-          userId,
-        );
-        return res.json({
-          success: true,
-          message: `Invoice ${invoice.invoice_number} marked as PAID.`,
-        });
+      if (
+        ["create_client", "create_invoice", "settle_invoice"].includes(action)
+      ) {
+        const id = data.pendingActionId;
+        const p = await claimPending(userId, action, id);
+        if (!p)
+          throw new AppError(
+            "This action expired or was already confirmed.",
+            409,
+          );
+        try {
+          let message;
+          if (action === "create_client") {
+            const client = await clientService.registerClient(
+              userId,
+              p.name,
+              p.email,
+              p.phone_number,
+            );
+            message = `Client '${client.name}' created.`;
+          } else if (action === "create_invoice") {
+            const invoice = await invoiceService.createFullInvoice(
+              userId,
+              p.client_id,
+              p.invoice_number,
+              p.due_date,
+              p.items,
+            );
+            message = `Invoice ${invoice.invoice_number} created with ${invoice.items.length} line item(s).`;
+          } else {
+            const invoice = await invoiceService.settleInvoiceBalance(
+              p.invoiceId,
+              userId,
+            );
+            message = `Invoice ${invoice.invoice_number} marked as PAID.`;
+          }
+          await finishPending(id, "executed");
+          return res.json({ success: true, message });
+        } catch (e) {
+          await finishPending(id, "failed");
+          throw e;
+        }
       }
 
       if (action === "send_reminders") {

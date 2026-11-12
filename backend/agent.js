@@ -54,6 +54,44 @@ function isRealDate(ymd) {
   );
 }
 
+async function createPending(userId, actionType, payload) {
+  const { rows } = await pool.query(
+    "INSERT INTO pending_actions (user_id, action_type, payload) VALUES ($1, $2, $3::jsonb) RETURNING id",
+    [userId, actionType, JSON.stringify(payload)],
+  );
+  return rows[0].id;
+}
+const MONTHLY_TOKEN_LIMIT = Number(
+  process.env.AI_MONTHLY_TOKEN_LIMIT || 1000000,
+);
+
+async function logUsage(userId, response) {
+  const u = response.usageMetadata || {};
+  await pool
+    .query(
+      `INSERT INTO ai_usage (user_id, model, input_tokens, cached_tokens, output_tokens, thought_tokens)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+      [
+        userId,
+        GEMINI_MODEL,
+        u.promptTokenCount || 0,
+        u.cachedContentTokenCount || 0,
+        u.candidatesTokenCount || 0,
+        u.thoughtsTokenCount || 0,
+      ],
+    )
+    .catch((e) => console.error("usage log failed:", e.message));
+}
+
+async function overBudget(userId) {
+  const { rows } = await pool.query(
+    `SELECT COALESCE(SUM(input_tokens + output_tokens + thought_tokens), 0)::BIGINT AS used
+     FROM ai_usage WHERE user_id = $1 AND created_at >= date_trunc('month', now())`,
+    [userId],
+  );
+  return Number(rows[0].used) >= MONTHLY_TOKEN_LIMIT;
+}
+
 // Makes % and _ in user text match literally inside ILIKE
 const escapeLike = (s) => s.replace(/[\\%_]/g, "\\$&");
 
@@ -186,7 +224,11 @@ async function registerNewClient(userId, args) {
     .trim()
     .toLowerCase();
   const phone = args.phone ? String(args.phone).trim() : null;
-
+  const pendingActionId = await createPending(userId, "create_client", {
+    name,
+    email,
+    phone_number: phone,
+  });
   if (!name) return { error: "A client name is required." };
   if (!EMAIL_RE.test(email)) {
     return { error: "A valid client email is required. Ask the user for it." };
@@ -207,12 +249,21 @@ async function registerNewClient(userId, args) {
       type: "approval_required",
       action: "create_client",
       message: `Add **${name}** (${email}${phone ? `, ${phone}` : ""}) as a new client?`,
-      data: { name, email, phone_number: phone },
+      data: { pendingActionId },
     },
   };
 }
 
 async function draftNewInvoice(userId, args) {
+  const pendingActionId = await createPending(userId, "create_invoice", {
+    client_id: client.id,
+    due_date: args.dueDate,
+    items: items.map((i) => ({
+      description: i.description,
+      quantity: i.quantity,
+      price: i.unitAmountCents / 100,
+    })),
+  });
   const clientId = Number(args.clientId);
   if (!Number.isInteger(clientId) || clientId < 1) {
     return { error: "clientId is required. Use findClients to look it up." };
@@ -252,20 +303,16 @@ async function draftNewInvoice(userId, args) {
       type: "approval_required",
       action: "create_invoice",
       message: `Create an invoice for **${client.name}**: ${items.length} line item(s), total **${money(totalCents)}**, due **${formatDate(args.dueDate)}**. The invoice number is assigned automatically. Create it?`,
-      data: {
-        client_id: client.id,
-        due_date: args.dueDate,
-        items: items.map((i) => ({
-          description: i.description,
-          quantity: i.quantity,
-          price: i.unitAmountCents / 100,
-        })),
-      },
+      data: { pendingActionId },
     },
   };
 }
 
 async function settleInvoiceBalance(userId, args) {
+  const pendingActionId = await createPending(userId, "settle_invoice", {
+    invoiceId: invoice.id,
+  });
+
   const params = [userId];
   let match;
   if (args.invoiceId !== undefined && args.invoiceId !== null) {
@@ -313,7 +360,7 @@ async function settleInvoiceBalance(userId, args) {
       type: "approval_required",
       action: "settle_invoice",
       message: `Mark invoice **${invoice.invoice_number}** for **${invoice.client_name}** (${money(invoice.total_cents)}) as paid?`,
-      data: { invoiceId: invoice.id },
+      data: { pendingActionId },
     },
   };
 }
@@ -539,6 +586,13 @@ function toContents(history) {
 // first proposal (or final text) ends it. Returns what the chat route sends back.
 // ---------------------------------------------------------------------------
 async function run({ userId, message, history }) {
+  if (await overBudget(userId)) {
+    return {
+      type: "text",
+      message:
+        "You've reached this month's AI assistant limit. It resets on the 1st, and everything else in the app still works.",
+    };
+  }
   const contents = [
     ...toContents(history),
     { role: "user", parts: [{ text: message }] },
@@ -556,6 +610,7 @@ async function run({ userId, message, history }) {
           : {}),
       },
     });
+    await logUsage(userId, response);
 
     const calls = response.functionCalls || [];
     if (calls.length === 0) {

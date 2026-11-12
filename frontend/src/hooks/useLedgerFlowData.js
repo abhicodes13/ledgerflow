@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-
+import { API_BASE } from "../lib/config";
 export function useLedgerFlowData() {
   const [token, setToken] = useState(localStorage.getItem("lf_token") || "");
   const [currentUser, setCurrentUser] = useState(
@@ -42,8 +42,6 @@ export function useLedgerFlowData() {
   const [items, setItems] = useState([
     { description: "", quantity: 1, price: "" },
   ]);
-
-  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
   const fetchMetrics = () => {
     if (!token) return;

@@ -31,6 +31,8 @@ import { useReminders } from "./hooks/useReminders";
 import { ReminderModal } from "./components/ReminderModal";
 import { EstimatesView } from "./pages/EstimatesView";
 import { SignaturesView } from "./pages/SignaturesView";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 
 function App() {
   const data = useLedgerFlowData();
@@ -433,7 +435,11 @@ function App() {
       <ReminderModal reminders={reminders} />
     </AppShell>
   );
-
+  // Shows "Password updated" after a reset (passed through the router's state)
+  const loginMessage =
+    !authMessage.text && !isRegistering && location.state?.notice
+      ? { text: location.state.notice, isError: false }
+      : authMessage;
   const loginElement = data.token ? (
     <Navigate to={location.state?.from?.pathname ?? "/app"} replace />
   ) : (
@@ -449,7 +455,7 @@ function App() {
       setEmail={setAuthEmail}
       password={authPassword}
       setPassword={setAuthPassword}
-      message={authMessage}
+      message={loginMessage}
       submitting={authSubmitting}
       onSubmit={handleAuthSubmit}
       theme={theme}
@@ -471,6 +477,14 @@ function App() {
         }
       />
       <Route path="/login" element={loginElement} />
+      <Route
+        path="/forgot-password"
+        element={<ForgotPasswordPage theme={theme} setTheme={setTheme} />}
+      />
+      <Route
+        path="/reset-password"
+        element={<ResetPasswordPage theme={theme} setTheme={setTheme} />}
+      />
 
       {/* Stripe currently returns users to /dashboard?payment=... */}
       <Route

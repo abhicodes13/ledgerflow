@@ -1,7 +1,8 @@
 // Watches responses from our API and announces auth/billing failures,
+
 // so the UI can react in one place instead of in every fetch call.
+import { API_BASE } from "../lib/config";
 export const API_ERROR_EVENT = "lf:api-error";
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
 export function installApiGuard() {
   if (window.__lfApiGuard) return;

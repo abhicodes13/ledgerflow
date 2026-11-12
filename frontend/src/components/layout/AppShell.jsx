@@ -78,7 +78,7 @@ export function AppShell({
           <aside
             aria-label="AI assistant"
             className={cn(
-              "fixed inset-y-0 right-0 z-50 w-[min(24rem,100vw)] border-l border-border bg-surface shadow-[var(--shadow-pop)]",
+              "fixed inset-y-0 right-0 z-50 max-xl:h-dvh w-[min(24rem,100vw)] border-l border-border bg-surface shadow-[var(--shadow-pop)]",
               "transition-[transform,visibility] duration-300 ease-out",
               "xl:visible xl:static xl:z-auto xl:w-96 xl:shrink-0 xl:translate-x-0 xl:shadow-none",
               drawerOpen

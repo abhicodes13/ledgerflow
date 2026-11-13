@@ -173,6 +173,8 @@ function buildSystemInstruction() {
     "- To create an invoice, call draftNewInvoice directly with the client's name. Do NOT call findClients first; the server finds the client. Use findClients and findInvoices to answer questions or to browse.",
     '- For an invoice\'s due date: if the user gives a date, send dueDate; if they say terms like "net 15", send termsDays; if they say nothing, send neither (the default terms are applied and shown on the approval card). Never ask the user for a due date.',
     '- If the user says "same as last time", "again", or similar, set reuseLastItems to true instead of asking for the items.',
+    "- If the user wants to add a NEW client and invoice them in the same message, call draftNewInvoice ONCE with newClient (name and email) plus the invoice details, so they approve both with one tap. Do not call registerNewClient first. If the email is missing, ask for it.",
+    '- If the user gives a month and day without a year (for example "nov 12"), use the next such date on or after today.',
     "- Only ask a question when something essential is really missing (a price or description for a new invoice, a client's email for a new client) or when several clients match.",
     "- Actions that change data (create client, create invoice, mark paid, send reminders) are only PROPOSED. The user must confirm in the app. Never say something has been done until the user has confirmed it.",
     "- Do one action at a time. If the user asks for several, propose the first and mention the rest.",
@@ -371,10 +373,41 @@ async function resolveClient(userId, args) {
 }
 
 async function draftNewInvoice(userId, args) {
-  // 1. Client (looked up in code, scoped to this user)
-  const resolved = await resolveClient(userId, args);
-  if (resolved.error) return { error: resolved.error };
-  const client = resolved.client;
+  // 1. Client: either a brand-new one (added together with the invoice when the
+  //    user approves) or an existing one looked up in code, scoped to this user
+  let client;
+  let newClient = null;
+  if (args.newClient && typeof args.newClient === "object") {
+    const name = String(args.newClient.name || "").trim();
+    const email = String(args.newClient.email || "")
+      .trim()
+      .toLowerCase();
+    const phone = args.newClient.phone
+      ? String(args.newClient.phone).trim()
+      : null;
+
+    if (!name) return { error: "newClient needs a name." };
+    if (!EMAIL_RE.test(email)) {
+      return {
+        error: "newClient needs a valid email. Ask the user for it.",
+      };
+    }
+    const dupe = await pool.query(
+      "SELECT name FROM clients WHERE user_id = $1 AND email = $2",
+      [userId, email],
+    );
+    if (dupe.rowCount > 0) {
+      return {
+        error: `A client with the email ${email} already exists (${dupe.rows[0].name}). Call draftNewInvoice again with clientName instead of newClient.`,
+      };
+    }
+    newClient = { name, email, phone };
+    client = { id: null, name };
+  } else {
+    const resolved = await resolveClient(userId, args);
+    if (resolved.error) return { error: resolved.error };
+    client = resolved.client;
+  }
 
   // 2. Due date: an explicit date, else terms in days, else the default terms
   let dueDate;
@@ -464,7 +497,14 @@ async function draftNewInvoice(userId, args) {
 
   // 4. Only now save the proposal (client, date, and items are all verified)
   const pendingActionId = await createPending(userId, "create_invoice", {
-    client_id: client.id,
+    client_id: client.id, // null when newClient is being added with the invoice
+    new_client: newClient
+      ? {
+          name: newClient.name,
+          email: newClient.email,
+          phone_number: newClient.phone,
+        }
+      : null,
     due_date: dueDate,
     items: items.map((i) => ({
       description: i.description,
@@ -477,9 +517,16 @@ async function draftNewInvoice(userId, args) {
     proposal: {
       type: "approval_required",
       action: "create_invoice",
-      message: `Create an invoice for **${client.name}**: ${items.length} line item(s), total **${money(totalCents)}**, due **${formatDate(dueDate)}**${termsNote}${copiedFrom ? `, items copied from ${copiedFrom}` : ""}. The invoice number is assigned automatically. Create it?`,
+      message: `${newClient ? `Add **${client.name}** (${newClient.email}) as a new client and create their invoice` : `Create an invoice for **${client.name}**`}: ${items.length} line item(s), total **${money(totalCents)}**, due **${formatDate(dueDate)}**${termsNote}${dueDate < addDaysYmd(0) ? " (this date has already passed)" : ""}${copiedFrom ? `, items copied from ${copiedFrom}` : ""}. The invoice number is assigned automatically. ${newClient ? "Add the client and create the invoice?" : "Create it?"}`,
       summary: {
         client_name: client.name,
+        new_client: newClient
+          ? {
+              name: newClient.name,
+              email: newClient.email,
+              phone: newClient.phone,
+            }
+          : null,
         total: money(totalCents),
         due_date: dueDate,
         copied_from: copiedFrom,
@@ -681,18 +728,36 @@ const DECLARATIONS = [
   {
     name: "draftNewInvoice",
     description:
-      "Propose a new invoice for an existing client. The user confirms before it is created, and the invoice number is assigned automatically. Pass the client's name in clientName; the server finds the client, so do not call findClients first. Due date: send dueDate if the user gave a date, termsDays if they said terms such as net 15, or neither to use the default terms. Line items: send items when the user gave descriptions and prices, or set reuseLastItems to true when they said same as last time. Only ask the user when a price or description is missing or several clients match.",
+      "Propose a new invoice. The user confirms before anything is created, and the invoice number is assigned automatically. For an existing client, pass the client's name in clientName; the server finds the client, so do not call findClients first. For a client who does not exist yet, pass newClient (name and email) instead of clientName, and the client is added together with the invoice in one approval. Due date: send dueDate if the user gave a date, termsDays if they said terms such as net 15, or neither to use the default terms. Line items: send items when the user gave descriptions and prices, or set reuseLastItems to true when they said same as last time. Only ask the user when a price, description, or new client's email is missing, or when several clients match.",
     parameters: {
       type: "OBJECT",
       properties: {
         clientName: {
           type: "STRING",
-          description: "The client's name (or part of it, or their email).",
+          description:
+            "An EXISTING client's name (or part of it, or their email).",
         },
         clientId: {
           type: "NUMBER",
           description:
             "The client's id, only if you already know it from an earlier lookup.",
+        },
+        newClient: {
+          type: "OBJECT",
+          description:
+            "A client that does not exist yet, to be added together with this invoice. Use instead of clientName.",
+          properties: {
+            name: {
+              type: "STRING",
+              description: "The client's or company's full name.",
+            },
+            email: {
+              type: "STRING",
+              description: "The client's email address.",
+            },
+            phone: { type: "STRING", description: "Optional phone number." },
+          },
+          required: ["name", "email"],
         },
         dueDate: {
           type: "STRING",

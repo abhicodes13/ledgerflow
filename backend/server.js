@@ -605,14 +605,56 @@ app.post(
             );
             message = `Client '${client.name}' created.`;
           } else if (action === "create_invoice") {
-            const invoice = await invoiceService.createFullInvoice(
-              userId,
-              p.client_id,
-              p.invoice_number,
-              p.due_date,
-              p.items,
-            );
-            message = `Invoice ${invoice.invoice_number} created with ${invoice.items.length} line item(s).`;
+            let clientId = p.client_id;
+            let createdClient = null;
+
+            // The proposal may add a brand-new client together with the invoice
+            if (p.new_client) {
+              createdClient = await clientService.registerClient(
+                userId,
+                p.new_client.name,
+                p.new_client.email,
+                p.new_client.phone_number,
+              );
+              clientId = createdClient?.id;
+              if (!clientId) {
+                const found = await pool.query(
+                  "SELECT id FROM clients WHERE user_id = $1 AND email = $2",
+                  [userId, String(p.new_client.email).toLowerCase()],
+                );
+                clientId = found.rows[0]?.id;
+              }
+              if (!clientId) {
+                throw new AppError(
+                  "The client was added, but I couldn't find it to create the invoice. Please try the invoice again.",
+                  500,
+                );
+              }
+            }
+
+            let invoice;
+            try {
+              invoice = await invoiceService.createFullInvoice(
+                userId,
+                clientId,
+                p.invoice_number,
+                p.due_date,
+                p.items,
+              );
+            } catch (invoiceError) {
+              if (createdClient) {
+                // Step 1 worked, step 2 did not: say so plainly
+                throw new AppError(
+                  `Client '${p.new_client.name}' was added, but the invoice could not be created (${invoiceError.message}). Ask me to create the invoice again.`,
+                  invoiceError.status || 400,
+                );
+              }
+              throw invoiceError;
+            }
+
+            message = createdClient
+              ? `Client '${p.new_client.name}' added and invoice ${invoice.invoice_number} created with ${invoice.items.length} line item(s).`
+              : `Invoice ${invoice.invoice_number} created with ${invoice.items.length} line item(s).`;
           } else {
             const invoice = await invoiceService.settleInvoiceBalance(
               p.invoiceId,

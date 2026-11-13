@@ -181,6 +181,7 @@ const ACTIONS = {
 
   send_reminders: {
     title: "Send reminders",
+     alwaysShow: true,
     confirmLabel: "Send reminders",
     icon: Mail,
     build: ({ data }) => ({
@@ -244,14 +245,22 @@ export function describeAction(action, data = {}, ctx = {}) {
   const clients = ctx.clients ?? [];
   const invoices = ctx.invoices ?? [];
   const entry = ACTIONS[action];
-  const base = entry
-    ? entry.build({ data, clients, invoices })
-    : genericBuild(data);
+
+  // The server may send only { pendingActionId }. Then there are no fields to show
+  // and the card relies on the server's message text.
+  const hasDetails = Object.keys(data || {}).some((k) => k !== "pendingActionId");
+
+  let base = { rows: [], items: [] };
+  if (entry && (hasDetails || entry.alwaysShow)) {
+    base = entry.build({ data: data || {}, clients, invoices });
+  } else if (!entry && hasDetails) {
+    base = genericBuild(data);
+  }
 
   return {
-    title: entry?.title ?? humanize(action) ?? "Action",
-    confirmLabel: entry?.confirmLabel ?? "Confirm",
-    icon: entry?.icon ?? Sparkles,
+    title: entry?.title || humanize(action) || "Action",
+    confirmLabel: entry?.confirmLabel || "Confirm",
+    icon: entry?.icon || Sparkles,
     rows: (base.rows ?? []).filter(Boolean),
     items: base.items ?? [],
     list: base.list ?? null,

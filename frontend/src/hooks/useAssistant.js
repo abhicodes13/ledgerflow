@@ -3,11 +3,9 @@ import { errorMessage } from "../lib/api";
 
 const REQUEST_TIMEOUT_MS = 40_000; // the typing indicator gives up after this
 const CARD_TTL_MS = 15 * 60 * 1000; // the server expires confirmation cards after 15 minutes
-const MAX_MESSAGE = 2000;
+const MAX_MESSAGE = 2000; // what the user may send
+const MAX_HISTORY_TEXT = 1000; // the server cuts each history line to this
 const HISTORY_COUNT = 8;
-// ASSUMPTION: the field name and shape the backend expects for history.
-// Confirm with your backend dev. This is the only place to change.
-const HISTORY_FIELD = "history"; // sent as [{ role: "user" | "assistant", content }]
 const EXPIRED_NOTE =
   "This request expired or was already used. Ask again if you still need it.";
 
@@ -24,6 +22,25 @@ const welcome = () => ({
   sender: "ai",
   text: "Hi! I can add clients, draft invoices, mark payments as received, and send reminders. Pick a shortcut or just type what you need.",
 });
+
+// Accepts only a well-formed report; everything is rendered later as plain text
+function cleanReport(r) {
+  if (!r || typeof r !== "object") return null;
+  if (!Array.isArray(r.columns) || !Array.isArray(r.rows)) return null;
+  const columns = r.columns
+    .filter((c) => c && typeof c.key === "string")
+    .map((c) => ({
+      key: c.key,
+      label: String(c.label ?? c.key),
+      align: ["left", "center", "right"].includes(c.align) ? c.align : "left",
+    }));
+  if (!columns.length) return null;
+  return {
+    title: r.title ? String(r.title) : "",
+    columns,
+    rows: r.rows.filter((row) => row && typeof row === "object"),
+  };
+}
 
 // Never throws: network failures, timeouts, and plain-text bodies (a 429 may not be JSON)
 // all come back as a result object.
@@ -75,27 +92,28 @@ function failureText(r, fallback) {
 const isRetryable = (r) =>
   Boolean(r.failure) || r.status === 429 || r.status >= 500;
 
-// The last few text messages, plus a short line for each resolved card
+// The last few text messages, plus a short line for each resolved card.
+// The server expects { role, text } and only reads text.
 export function buildHistory(messages) {
   return messages
     .map((m) => {
       if (m.type === "text") {
         return {
           role: m.sender === "user" ? "user" : "assistant",
-          content: m.text,
+          text: m.text,
         };
       }
       if (m.type === "approval_box" && m.history) {
-        return { role: "assistant", content: m.history };
+        return { role: "assistant", text: m.history };
       }
       return null;
     })
     .filter(Boolean)
     .map((h) => ({
       ...h,
-      content: String(h.content ?? "").slice(0, MAX_MESSAGE),
+      text: String(h.text ?? "").slice(0, MAX_HISTORY_TEXT),
     }))
-    .filter((h) => h.content.trim())
+    .filter((h) => h.text.trim())
     .slice(-HISTORY_COUNT);
 }
 
@@ -205,7 +223,7 @@ export function useAssistant({ apiBase, token, onChanged }) {
 
       const history = buildHistory(past);
       const body = { message: text };
-      if (history.length) body[HISTORY_FIELD] = history;
+      if (history.length) body.history = history;
 
       const r = await request(apiBase, token, "/api/chat", body);
       sending.current = false;
@@ -228,7 +246,9 @@ export function useAssistant({ apiBase, token, onChanged }) {
           type: "approval_box",
           text: typeof d.message === "string" ? d.message : "",
           action: d.action,
-          data: d.data,
+          data: d.data, // sent back to /confirm untouched
+          summary:
+            d.summary && typeof d.summary === "object" ? d.summary : null,
           status: "waiting",
           createdAt: Date.now(),
           note: "",
@@ -243,6 +263,7 @@ export function useAssistant({ apiBase, token, onChanged }) {
         add({
           type: "text",
           text: reply || "I didn't get a reply. Try rephrasing that.",
+          report: cleanReport(d.report),
         });
       }
     },
@@ -285,6 +306,9 @@ export function useAssistant({ apiBase, token, onChanged }) {
         onChanged?.(); // it may have been confirmed elsewhere
         return;
       }
+
+      // A 400 or 500 can still be a partial success (client added, invoice failed)
+      if (!r.failure && ![401, 403, 429].includes(r.status)) onChanged?.();
       patch(id, {
         status: "failed",
         note: failureText(r, "Couldn't run that action."),

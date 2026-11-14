@@ -7,6 +7,7 @@ import {
   FileText,
   Mail,
   PanelRightClose,
+  Repeat,
   RotateCcw,
   Send,
   ShieldCheck,
@@ -16,26 +17,32 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/cn";
 import { Button } from "./ui";
-import { ActionDetails, RichText, describeAction } from "./ChatContent";
+import {
+  ActionDetails,
+  ReportTable,
+  RichText,
+  describeAction,
+} from "./ChatContent";
 
 // send: true = sends right away. false = fills the box so you can finish the sentence.
 const SUGGESTIONS = [
+  { icon: FileText, label: "Invoice a client", text: "Invoice ", send: false },
+  {
+    icon: Repeat,
+    label: "Same as last time",
+    text: "Same as last time for ",
+    send: false,
+  },
   {
     icon: BarChart3,
     label: "Overdue invoices",
-    text: "How much is overdue right now?",
+    text: "Show my overdue invoices",
     send: true,
   },
   {
     icon: UserPlus,
     label: "Add client",
     text: "Register a new client named ",
-    send: false,
-  },
-  {
-    icon: FileText,
-    label: "Create invoice",
-    text: "Draft an invoice for ",
     send: false,
   },
   {
@@ -51,6 +58,33 @@ const SUGGESTIONS = [
     send: true,
   },
 ];
+
+const TONES = {
+  default: {
+    box: "border-accent/40 bg-accent-soft/50",
+    head: "text-accent",
+    label: "Needs your OK",
+    Icon: ShieldCheck,
+  },
+  serious: {
+    box: "border-warning/50 bg-warning-soft/40",
+    head: "text-warning",
+    label: "Sends real emails",
+    Icon: Mail,
+  },
+  danger: {
+    box: "border-danger/40 bg-danger-soft/40",
+    head: "text-danger",
+    label: "Review carefully",
+    Icon: AlertTriangle,
+  },
+};
+
+const FINISHED = {
+  done: { label: "Done", Icon: CheckCircle2 },
+  expired: { label: "Expired", Icon: Clock },
+  cancelled: { label: "Cancelled", Icon: XCircle },
+};
 
 function ResultLine({ tone, icon: Icon, children }) {
   const styles = {
@@ -69,28 +103,32 @@ function ResultLine({ tone, icon: Icon, children }) {
   );
 }
 
-function ApprovalCard({ msg, clients, invoices, onConfirm, onCancel }) {
-  const d = describeAction(msg.action, msg.data, { clients, invoices });
+function ApprovalCard({ msg, onConfirm, onCancel }) {
+  const d = describeAction(msg.action, msg.summary);
   const ActionIcon = d.icon;
+  const tone = TONES[d.tone] ?? TONES.default;
   const { status } = msg;
   const confirming = status === "confirming";
   const muted = status === "expired" || status === "cancelled";
+  const header = FINISHED[status] ?? { label: tone.label, Icon: tone.Icon };
 
-  const header = {
-    done: { label: "Done", Icon: CheckCircle2 },
-    expired: { label: "Expired", Icon: Clock },
-    cancelled: { label: "Cancelled", Icon: XCircle },
-  }[status] ?? { label: "Needs your OK", Icon: ShieldCheck };
+  // A new card takes focus on its Confirm button, so keyboard and screen reader users land on it
+  const cardRef = useRef(null);
+  useEffect(() => {
+    cardRef.current?.querySelector("[data-confirm]")?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div
+      ref={cardRef}
       className={cn(
         "space-y-3 rounded-xl border p-4 animate-fadeIn transition-colors",
         muted
           ? "border-border bg-surface-2 opacity-70"
           : status === "done"
             ? "border-success/30 bg-success-soft/40"
-            : "border-accent/40 bg-accent-soft/50",
+            : tone.box,
       )}
     >
       <div className="flex items-center justify-between gap-2">
@@ -101,7 +139,7 @@ function ApprovalCard({ msg, clients, invoices, onConfirm, onCancel }) {
               ? "text-fg-muted"
               : status === "done"
                 ? "text-success"
-                : "text-accent",
+                : tone.head,
           )}
         >
           <ActionIcon className="h-4 w-4" aria-hidden />
@@ -124,8 +162,9 @@ function ApprovalCard({ msg, clients, invoices, onConfirm, onCancel }) {
       {(status === "waiting" || confirming) && (
         <div className="flex gap-2">
           <Button
-            size="sm"
-            className="flex-1"
+            size="md"
+            className="min-h-11 flex-1"
+            data-confirm
             loading={confirming}
             disabled={confirming}
             onClick={() => onConfirm(msg.id)}
@@ -133,8 +172,9 @@ function ApprovalCard({ msg, clients, invoices, onConfirm, onCancel }) {
             {d.confirmLabel}
           </Button>
           <Button
-            size="sm"
+            size="md"
             variant="secondary"
+            className="min-h-11"
             disabled={confirming}
             onClick={() => onCancel(msg.id)}
           >
@@ -151,16 +191,17 @@ function ApprovalCard({ msg, clients, invoices, onConfirm, onCancel }) {
           <div className="flex gap-2">
             {msg.canRetry && (
               <Button
-                size="sm"
-                className="flex-1"
+                size="md"
+                className="min-h-11 flex-1"
                 onClick={() => onConfirm(msg.id)}
               >
                 Try again
               </Button>
             )}
             <Button
-              size="sm"
+              size="md"
               variant="secondary"
+              className="min-h-11"
               onClick={() => onCancel(msg.id)}
             >
               Dismiss
@@ -201,7 +242,7 @@ function Deck({ msg, onPick, disabled }) {
             type="button"
             disabled={disabled}
             onClick={() => onPick(s)}
-            className="flex w-full items-center gap-3 rounded-xl border border-border px-3.5 py-2.5 text-left text-sm font-medium text-fg transition-colors hover:border-accent hover:bg-accent-soft disabled:opacity-50"
+            className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-border px-3.5 py-2.5 text-left text-sm font-medium text-fg transition-colors hover:border-accent hover:bg-accent-soft disabled:opacity-50"
           >
             <s.icon className="h-4 w-4 text-accent" aria-hidden />
             {s.label}
@@ -221,8 +262,6 @@ export function AIConsole({
   onConfirm,
   onCancel,
   onClose,
-  clients = [],
-  invoices = [],
 }) {
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
@@ -256,6 +295,7 @@ export function AIConsole({
         <Button
           variant="ghost"
           size="icon"
+          className="min-h-11 min-w-11"
           aria-label="Close assistant"
           onClick={onClose}
         >
@@ -279,8 +319,6 @@ export function AIConsole({
               <ApprovalCard
                 key={msg.id}
                 msg={msg}
-                clients={clients}
-                invoices={invoices}
                 onConfirm={onConfirm}
                 onCancel={onCancel}
               />
@@ -296,8 +334,9 @@ export function AIConsole({
                   <p>{msg.text}</p>
                   {msg.retryText && (
                     <Button
-                      size="sm"
+                      size="md"
                       variant="secondary"
+                      className="min-h-11"
                       disabled={loading}
                       onClick={() => onSend(msg.retryText, { retry: true })}
                     >
@@ -312,20 +351,20 @@ export function AIConsole({
 
           const isUser = msg.sender === "user";
           return (
-            <div
-              key={msg.id}
-              className={cn("flex animate-fadeIn", isUser && "justify-end")}
-            >
-              <div
-                className={cn(
-                  "max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm",
-                  isUser
-                    ? "rounded-br-sm bg-accent text-accent-fg"
-                    : "rounded-tl-sm bg-surface-2 text-fg",
-                )}
-              >
-                {isUser ? msg.text : <RichText text={msg.text} />}
+            <div key={msg.id} className="space-y-2 animate-fadeIn">
+              <div className={cn("flex", isUser && "justify-end")}>
+                <div
+                  className={cn(
+                    "max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm",
+                    isUser
+                      ? "rounded-br-sm bg-accent text-accent-fg"
+                      : "rounded-tl-sm bg-surface-2 text-fg",
+                  )}
+                >
+                  {isUser ? msg.text : <RichText text={msg.text} />}
+                </div>
               </div>
+              {!isUser && msg.report && <ReportTable report={msg.report} />}
             </div>
           );
         })}
@@ -364,7 +403,7 @@ export function AIConsole({
                 type="button"
                 disabled={loading}
                 onClick={() => pick(s)}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-border px-3.5 text-xs font-medium text-fg-muted transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
               >
                 <s.icon className="h-3.5 w-3.5" aria-hidden />
                 {s.label}
@@ -393,14 +432,14 @@ export function AIConsole({
             placeholder={
               loading ? "Working on it..." : "Ask me to do something..."
             }
-            className="h-10 min-w-0 flex-1 rounded-lg border border-border-strong bg-surface px-3 text-base text-fg placeholder:text-fg-subtle transition-colors focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-50 sm:text-sm"
+            className="h-11 min-w-0 flex-1 rounded-lg border border-border-strong bg-surface px-3 text-base text-fg placeholder:text-fg-subtle transition-colors focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-50 sm:text-sm"
           />
           <Button
             type="submit"
             size="icon"
             aria-label="Send message"
             disabled={loading || !input.trim()}
-            className="h-10 w-10"
+            className="min-h-11 min-w-11"
           >
             <Send className="h-4 w-4" aria-hidden />
           </Button>

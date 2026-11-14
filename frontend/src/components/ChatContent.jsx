@@ -1,15 +1,19 @@
 import {
   AlertTriangle,
+  Ban,
+  CalendarClock,
   CheckCircle2,
   FileText,
+  ListPlus,
   Mail,
   Sparkles,
+  Timer,
   UserPlus,
 } from "lucide-react";
 import { cn } from "../lib/cn";
-import { formatCurrency, formatDate, invoiceAmountCents } from "../lib/format";
+import { formatDate } from "../lib/format";
 
-/* ───────── Text with light formatting ───────── */
+/* ───────── Text with light formatting (builds React nodes, never raw HTML) ───────── */
 
 function inline(str) {
   return str.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, i) => {
@@ -75,194 +79,290 @@ export function RichText({ text = "" }) {
   );
 }
 
-/* ───────── Action registry ─────────
-   One entry per AI action the server can propose (`action` in approval_required).
-   build() returns what the card shows. To support a new tool, add an entry here.
-   If you forget, the generic fallback below still shows a readable card. */
+/* ───────── Report table (assistant "report" objects) ───────── */
 
+const ALIGN = { left: "text-left", center: "text-center", right: "text-right" };
+const MAX_ROWS = 50;
+
+// All values arrive as formatted strings, so they are shown exactly as sent
+export function ReportTable({ report }) {
+  const { title, columns, rows } = report;
+  const shown = rows.slice(0, MAX_ROWS);
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-surface animate-fadeIn">
+      {title && (
+        <p className="border-b border-border bg-surface-2 px-3 py-2 text-xs font-semibold text-fg">
+          {title}
+        </p>
+      )}
+      {shown.length === 0 ? (
+        <p className="px-3 py-3 text-sm text-fg-muted">No results.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            {title && <caption className="sr-only">{title}</caption>}
+            <thead>
+              <tr className="border-b border-border text-xs text-fg-muted">
+                {columns.map((c) => (
+                  <th
+                    key={c.key}
+                    scope="col"
+                    className={cn("px-3 py-2 font-medium", ALIGN[c.align])}
+                  >
+                    {c.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {shown.map((row, i) => (
+                <tr key={i}>
+                  {columns.map((c) => (
+                    <td
+                      key={c.key}
+                      className={cn(
+                        "whitespace-nowrap px-3 py-2 text-fg",
+                        ALIGN[c.align],
+                        c.align === "right" && "num",
+                      )}
+                    >
+                      {String(row[c.key] ?? "")}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {rows.length > MAX_ROWS && (
+        <p className="border-t border-border px-3 py-2 text-xs text-fg-subtle">
+          Showing the first {MAX_ROWS} of {rows.length} rows.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ───────── Action cards ─────────
+   The server sends a `summary` for each proposed action. Money is already a formatted
+   string ("$1,500.50"), so it is shown as-is and never recomputed. Dates are
+   YYYY-MM-DD and are formatted without time zones. */
+
+const str = (v) => (v == null ? "" : String(v));
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}/;
+const dateText = (v) => (DATE_ONLY.test(str(v)) ? formatDate(v) : str(v));
+
+const humanize = (s) =>
+  String(s || "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/^\w/, (c) => c.toUpperCase());
+
+const itemRow = (it) => {
+  if (!it || typeof it !== "object") {
+    return { description: str(it), detail: "", amount: "" };
+  }
+  const qty = Number(it.quantity);
+  return {
+    description: str(it.description) || "Item",
+    detail: qty > 1 ? `${qty} × ${str(it.unit_price)}` : "",
+    amount: str(it.line_total ?? it.amount ?? it.total),
+  };
+};
+
+// tone: "default" | "serious" (real emails) | "danger" (destructive)
 const ACTIONS = {
   create_client: {
     title: "New client",
     confirmLabel: "Add client",
     icon: UserPlus,
-    build: ({ data }) => ({
+    build: (s) => ({
       rows: [
-        { label: "Name", value: data.name },
-        { label: "Email", value: data.email },
-        data.phone_number && {
-          label: "Phone",
-          value: data.phone_number,
-          mono: true,
-        },
+        { label: "Name", value: str(s.name) },
+        { label: "Email", value: str(s.email) },
+        s.phone && { label: "Phone", value: str(s.phone), mono: true },
       ],
     }),
   },
 
   create_invoice: {
     title: "New invoice",
-    confirmLabel: "Create invoice",
+    confirmLabel: (s) =>
+      s.new_client ? "Add client and create invoice" : "Create invoice",
     icon: FileText,
-    build: ({ data, clients }) => {
-      const client = clients.find(
-        (c) => Number(c.id) === Number(data.client_id),
-      );
-      const items = Array.isArray(data.items) ? data.items : [];
-      const totalCents = items.reduce(
-        (sum, it) =>
-          sum +
-          Math.round(Number(it.price || 0) * 100) * (Number(it.quantity) || 1),
-        0,
-      );
-      return {
-        rows: [
-          {
-            label: "Client",
-            value: client ? client.name : `Client #${data.client_id}`,
-          },
-          client?.email && { label: "Email", value: client.email },
-          { label: "Due date", value: formatDate(data.due_date), mono: true },
-          {
-            label: "Invoice number",
-            value: data.invoice_number || "Assigned automatically",
-          },
-          {
-            label: "Total",
-            value: formatCurrency(totalCents),
-            mono: true,
-            strong: true,
-          },
-        ],
-        items,
-        warnings:
-          client || clients.length === 0
-            ? []
-            : [
-                "I couldn't match this to a client in your list. Check it before confirming.",
-              ],
-      };
-    },
+    build: (s) => ({
+      heading: str(s.client_name) || str(s.new_client?.name),
+      newClient:
+        s.new_client && typeof s.new_client === "object" ? s.new_client : null,
+      copiedFrom: s.copied_from ? str(s.copied_from) : null,
+      items: Array.isArray(s.items) ? s.items.map(itemRow) : [],
+      rows: [
+        s.due_date && {
+          label: "Due date",
+          value: dateText(s.due_date),
+          mono: true,
+        },
+        s.total && {
+          label: "Total",
+          value: str(s.total),
+          mono: true,
+          strong: true,
+        },
+      ],
+    }),
   },
 
   settle_invoice: {
     title: "Mark as paid",
     confirmLabel: "Mark as paid",
     icon: CheckCircle2,
-    build: ({ data, invoices }) => {
-      const inv = invoices.find((i) => Number(i.id) === Number(data.invoiceId));
-      if (!inv) {
-        return {
-          rows: [{ label: "Invoice", value: `#${data.invoiceId}`, mono: true }],
-          warnings: invoices.length
-            ? [
-                "I couldn't match this to an invoice in your list. Check it before confirming.",
-              ]
-            : [],
-        };
-      }
-      return {
-        rows: [
-          { label: "Invoice", value: inv.invoice_number, mono: true },
-          { label: "Client", value: inv.client_name },
-          {
-            label: "Amount",
-            value: formatCurrency(invoiceAmountCents(inv)),
-            mono: true,
-            strong: true,
-          },
-          { label: "Due date", value: formatDate(inv.due_date), mono: true },
-        ],
-        warnings:
-          inv.status === "paid"
-            ? ["This invoice is already marked as paid."]
-            : [],
-      };
-    },
+    build: (s) => ({
+      rows: [
+        { label: "Invoice", value: str(s.invoice_number), mono: true },
+        { label: "Client", value: str(s.client_name) },
+        { label: "Amount", value: str(s.total), mono: true, strong: true },
+      ],
+    }),
   },
 
   send_reminders: {
     title: "Send reminders",
-     alwaysShow: true,
     confirmLabel: "Send reminders",
     icon: Mail,
-    build: ({ data }) => ({
-      rows: [{ label: "Channel", value: "Email" }],
-      // If the server ever adds `recipients` to data, they're listed here
-      list: Array.isArray(data.recipients)
-        ? data.recipients
-            .map((r) => r.client_name || r.name || r.email)
-            .filter(Boolean)
-        : null,
-      note: "Each client with an overdue invoice gets one email. Clients reminded recently, or without an email, are skipped.",
+    tone: "serious",
+    alwaysBuild: true, // the server sends no summary for this one
+    build: () => ({
+      note: "This emails your clients for real. Check the message above before you confirm.",
+    }),
+  },
+
+  extend_due_date: {
+    title: "Extend due date",
+    confirmLabel: "Extend due date",
+    icon: CalendarClock,
+    build: (s) => ({
+      rows: [
+        { label: "Invoice", value: str(s.invoice_number), mono: true },
+        { label: "Client", value: str(s.client_name) },
+        {
+          label: "Current due date",
+          value: dateText(s.old_due_date),
+          mono: true,
+        },
+        {
+          label: "New due date",
+          value: dateText(s.new_due_date),
+          mono: true,
+          strong: true,
+        },
+      ],
+    }),
+  },
+
+  void_invoice: {
+    title: "Void invoice",
+    confirmLabel: "Void invoice",
+    icon: Ban,
+    tone: "danger",
+    build: (s) => ({
+      rows: [
+        { label: "Invoice", value: str(s.invoice_number), mono: true },
+        { label: "Client", value: str(s.client_name) },
+        { label: "Total", value: str(s.total), mono: true, strong: true },
+      ],
+      note: "Voiding is a serious change. Make sure this is the right invoice.",
+    }),
+  },
+
+  add_invoice_item: {
+    title: "Add line item",
+    confirmLabel: "Add item",
+    icon: ListPlus,
+    build: (s) => {
+      const isObject = s.item && typeof s.item === "object";
+      return {
+        itemsLabel: "Item to add",
+        items: isObject ? [itemRow(s.item)] : [],
+        rows: [
+          { label: "Invoice", value: str(s.invoice_number), mono: true },
+          { label: "Client", value: str(s.client_name) },
+          !isObject && s.item && { label: "Item", value: str(s.item) },
+          {
+            label: "New total",
+            value: str(s.new_total),
+            mono: true,
+            strong: true,
+          },
+        ],
+      };
+    },
+  },
+
+  set_client_defaults: {
+    title: "Payment terms",
+    confirmLabel: "Save terms",
+    icon: Timer,
+    build: (s) => ({
+      rows: [
+        { label: "Client", value: str(s.client_name) },
+        {
+          label: "Payment terms",
+          value: Number.isFinite(Number(s.terms_days))
+            ? `Net ${Number(s.terms_days)}`
+            : str(s.terms_days),
+          mono: true,
+          strong: true,
+        },
+      ],
     }),
   },
 };
 
-/* ───────── Generic fallback for actions not in the registry ───────── */
-
-const ID_KEY = /^id$|_id$|[a-z]Id$/; // hides id, client_id, invoiceId, pendingActionId, ...
-
-const humanize = (s) =>
-  String(s || "")
-    .replace(/(_cents|Cents)$/, "")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/[_-]+/g, " ")
-    .replace(/^\w/, (c) => c.toUpperCase());
-
-function formatValue(key, value) {
-  if (/_cents$|Cents$/.test(key)) return formatCurrency(value);
-  if (/(amount|price|total)$/i.test(key) && !isNaN(Number(value)))
-    return formatCurrency(Math.round(Number(value) * 100));
-  if (/date/i.test(key)) return formatDate(value);
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  return String(value);
-}
-
-function genericBuild(data) {
+// Actions we don't know yet still get a readable card
+function genericBuild(s) {
   const rows = [];
   let items = [];
-  for (const [key, value] of Object.entries(data || {})) {
-    if (ID_KEY.test(key) || value == null || value === "") continue;
+  for (const [key, value] of Object.entries(s)) {
+    if (value == null || value === "") continue;
     if (Array.isArray(value)) {
-      if (
-        value.length &&
-        value.every((v) => v && typeof v === "object" && "description" in v)
-      ) {
-        items = value;
-      } else if (value.every((v) => typeof v !== "object")) {
-        rows.push({ label: humanize(key), value: value.join(", ") });
+      if (value.length && value.every((v) => v && typeof v === "object")) {
+        items = value.map(itemRow);
       }
       continue;
     }
     if (typeof value === "object") continue;
-    rows.push({ label: humanize(key), value: formatValue(key, value) });
+    rows.push({
+      label: humanize(key),
+      value: /date/i.test(key) ? dateText(value) : str(value),
+    });
   }
   return { rows, items };
 }
 
-/* ───────── Public API ───────── */
-
-export function describeAction(action, data = {}, ctx = {}) {
-  const clients = ctx.clients ?? [];
-  const invoices = ctx.invoices ?? [];
+export function describeAction(action, summary) {
+  const s = summary && typeof summary === "object" ? summary : null;
   const entry = ACTIONS[action];
 
-  // The server may send only { pendingActionId }. Then there are no fields to show
-  // and the card relies on the server's message text.
-  const hasDetails = Object.keys(data || {}).some((k) => k !== "pendingActionId");
-
-  let base = { rows: [], items: [] };
-  if (entry && (hasDetails || entry.alwaysShow)) {
-    base = entry.build({ data: data || {}, clients, invoices });
-  } else if (!entry && hasDetails) {
-    base = genericBuild(data);
-  }
+  let base = {};
+  if (entry && (s || entry.alwaysBuild)) base = entry.build(s || {});
+  else if (s) base = genericBuild(s);
 
   return {
     title: entry?.title || humanize(action) || "Action",
-    confirmLabel: entry?.confirmLabel || "Confirm",
+    confirmLabel:
+      typeof entry?.confirmLabel === "function"
+        ? entry.confirmLabel(s || {})
+        : entry?.confirmLabel || "Confirm",
     icon: entry?.icon || Sparkles,
-    rows: (base.rows ?? []).filter(Boolean),
+    tone: entry?.tone || "default",
+    heading: base.heading || "",
+    rows: (base.rows ?? []).filter((r) => r && r.value !== ""),
     items: base.items ?? [],
+    itemsLabel: base.itemsLabel || "Items",
+    newClient: base.newClient || null,
+    copiedFrom: base.copiedFrom || null,
     list: base.list ?? null,
     warnings: base.warnings ?? [],
     note: base.note ?? null,
@@ -270,19 +370,82 @@ export function describeAction(action, data = {}, ctx = {}) {
 }
 
 export function ActionDetails({ details }) {
-  const { rows, items, list, warnings, note } = details;
-  if (
+  const {
+    heading,
+    rows,
+    items,
+    itemsLabel,
+    newClient,
+    copiedFrom,
+    list,
+    warnings,
+    note,
+  } = details;
+
+  const empty =
+    !heading &&
     !rows.length &&
     !items.length &&
+    !newClient &&
+    !copiedFrom &&
     !list?.length &&
     !warnings.length &&
-    !note
-  ) {
-    return null;
-  }
+    !note;
+  if (empty) return null;
 
   return (
     <div className="space-y-2">
+      {heading && (
+        <p className="text-sm font-semibold text-fg">For {heading}</p>
+      )}
+
+      {newClient && (
+        <div className="space-y-0.5 rounded-lg border border-accent/30 bg-surface p-3 text-sm">
+          <p className="text-xs font-medium text-accent">New client</p>
+          <p className="font-medium text-fg">{str(newClient.name)}</p>
+          {newClient.email && (
+            <p className="text-fg-muted">{str(newClient.email)}</p>
+          )}
+          {newClient.phone && (
+            <p className="num text-xs text-fg-muted">{str(newClient.phone)}</p>
+          )}
+        </div>
+      )}
+
+      {copiedFrom && (
+        <p className="text-xs text-fg-subtle">Copied from {copiedFrom}</p>
+      )}
+
+      {items.length > 0 && (
+        <div>
+          {items.length > 0 && itemsLabel !== "Items" && (
+            <p className="mb-1 text-xs font-medium text-fg-muted">
+              {itemsLabel}
+            </p>
+          )}
+          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
+            {items.map((it, i) => (
+              <li
+                key={i}
+                className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-fg">{it.description}</p>
+                  {it.detail && (
+                    <p className="num text-xs text-fg-subtle">{it.detail}</p>
+                  )}
+                </div>
+                {it.amount && (
+                  <span className="num shrink-0 font-medium text-fg">
+                    {it.amount}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {rows.length > 0 && (
         <dl className="space-y-2 rounded-lg bg-surface p-3 text-sm">
           {rows.map((r) => (
@@ -303,36 +466,6 @@ export function ActionDetails({ details }) {
             </div>
           ))}
         </dl>
-      )}
-
-      {items.length > 0 && (
-        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
-          {items.map((it, i) => {
-            const qty = Number(it.quantity) || 1;
-            const unit =
-              it.unit_amount_cents != null
-                ? Number(it.unit_amount_cents)
-                : Math.round(Number(it.price || 0) * 100);
-            return (
-              <li
-                key={i}
-                className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-fg">{it.description || "Item"}</p>
-                  {qty > 1 && (
-                    <p className="num text-xs text-fg-subtle">
-                      {qty} × {formatCurrency(unit)}
-                    </p>
-                  )}
-                </div>
-                <span className="num shrink-0 font-medium text-fg">
-                  {formatCurrency(qty * unit)}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
       )}
 
       {list?.length > 0 && (

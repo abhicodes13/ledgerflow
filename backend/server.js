@@ -362,6 +362,60 @@ app.get(
   },
 );
 
+// Unpaid invoices grouped by age (not yet due, 1-30, 31-60, 61-90, 90+ days)
+app.get(
+  "/api/analytics/aging",
+  authenticateToken,
+  checkSubscription,
+  async (req, res) => {
+    try {
+      const data = await analyticsRepository.getAgingReport(getUserId(req));
+      return res.json({ success: true, data });
+    } catch (error) {
+      return sendError(res, error, "aging report failed");
+    }
+  },
+);
+
+// Per-client balances and payment habits.
+// Optional: ?sort=outstanding|overdue|paid|invoices&limit=5&q=acme
+app.get(
+  "/api/analytics/clients",
+  authenticateToken,
+  checkSubscription,
+  async (req, res) => {
+    try {
+      const { sort, limit, q } = req.query;
+      const data = await analyticsRepository.getClientSummary(getUserId(req), {
+        sortBy: typeof sort === "string" ? sort : undefined,
+        limit,
+        clientName: typeof q === "string" ? q.slice(0, 100) : undefined,
+      });
+      return res.json({ success: true, data });
+    } catch (error) {
+      return sendError(res, error, "client summary failed");
+    }
+  },
+);
+
+// Invoiced and collected totals per month. Optional: ?months=6 (1 to 24)
+app.get(
+  "/api/analytics/revenue",
+  authenticateToken,
+  checkSubscription,
+  async (req, res) => {
+    try {
+      const data = await analyticsRepository.getRevenueByPeriod(
+        getUserId(req),
+        req.query.months,
+      );
+      return res.json({ success: true, data });
+    } catch (error) {
+      return sendError(res, error, "revenue report failed");
+    }
+  },
+);
+
 // =========================================================================
 // INVOICE PDF
 // =========================================================================

@@ -175,6 +175,7 @@ function buildSystemInstruction() {
     '- If the user says "same as last time", "again", or similar, set reuseLastItems to true instead of asking for the items.',
     "- If the user wants to add a NEW client and invoice them in the same message, call draftNewInvoice ONCE with newClient (name and email) plus the invoice details, so they approve both with one tap. Do not call registerNewClient first. If the email is missing, ask for it.",
     '- If the user gives a month and day without a year (for example "nov 12"), use the next such date on or after today.',
+    "- For questions about who owes money, how late invoices are, how a client pays, or monthly totals, call getAgingReport, getClientSummary, or getRevenueByPeriod and answer only from their numbers. Never estimate or calculate figures yourself. The app shows a table under your reply, so give the key takeaway in one or two sentences and do not repeat every row.",
     "- Only ask a question when something essential is really missing (a price or description for a new invoice, a client's email for a new client) or when several clients match.",
     "- Actions that change data (create client, create invoice, mark paid, send reminders) are only PROPOSED. The user must confirm in the app. Never say something has been done until the user has confirmed it.",
     "- Do one action at a time. If the user asks for several, propose the first and mention the rest.",
@@ -271,6 +272,123 @@ async function getBusinessMetrics(userId) {
     total_overdue: money(m.total_overdue_cents),
     total_collected: money(m.total_collected_cents),
     collected_this_month: money(m.collected_this_month_cents),
+  };
+}
+
+// Insight tools. Every number comes from SQL (analyticsRepository), never from
+// the model. Each returns compact data for the model plus a `report` for the
+// app to draw as a table; run() removes `report` before the model sees it.
+const signed = (n) => (n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1));
+
+async function getAgingReport(userId) {
+  const a = await analyticsRepository.getAgingReport(userId);
+  const rows = a.buckets.map((b) => ({
+    age: b.label,
+    invoices: b.invoice_count,
+    amount: money(b.total_cents),
+  }));
+  return {
+    total_unpaid: money(a.total_open_cents),
+    unpaid_invoices: a.open_invoice_count,
+    total_overdue: money(a.overdue_cents),
+    overdue_invoices: a.overdue_invoice_count,
+    buckets: rows,
+    report: {
+      title: "Unpaid invoices by age",
+      columns: [
+        { key: "age", label: "Age" },
+        { key: "invoices", label: "Invoices", align: "right" },
+        { key: "amount", label: "Amount", align: "right" },
+      ],
+      rows,
+    },
+  };
+}
+
+async function getClientSummary(userId, args) {
+  const clients = await analyticsRepository.getClientSummary(userId, {
+    clientName: args.clientName,
+    sortBy: args.sortBy,
+    limit: args.limit,
+  });
+  if (clients.length === 0) {
+    return {
+      count: 0,
+      clients: [],
+      note: args.clientName
+        ? `No client matches "${args.clientName}".`
+        : "No clients with a balance or invoices to show.",
+    };
+  }
+
+  const rows = clients.map((c) => ({
+    client: c.name,
+    outstanding: money(c.outstanding_cents),
+    overdue: money(c.overdue_cents),
+    paid: money(c.paid_cents),
+    invoices: c.invoice_count,
+    avg_days_vs_due:
+      c.avg_days_vs_due === null ? null : signed(c.avg_days_vs_due),
+  }));
+  return {
+    count: rows.length,
+    clients: rows,
+    note: "avg_days_vs_due is the average of paid date minus due date: positive means the client usually pays after the due date, negative means early, null means no paid invoices yet.",
+    report: {
+      title: args.clientName ? "Client summary" : "Clients",
+      columns: [
+        { key: "client", label: "Client" },
+        { key: "outstanding", label: "Outstanding", align: "right" },
+        { key: "overdue", label: "Overdue", align: "right" },
+        { key: "paid", label: "Paid", align: "right" },
+        { key: "invoices", label: "Invoices", align: "right" },
+        { key: "avg_days_vs_due", label: "Avg days vs due", align: "right" },
+      ],
+      rows: rows.map((r) => ({
+        ...r,
+        avg_days_vs_due: r.avg_days_vs_due ?? "-",
+      })),
+    },
+  };
+}
+
+async function getRevenueByPeriod(userId, args) {
+  const data = await analyticsRepository.getRevenueByPeriod(
+    userId,
+    args.months,
+  );
+  const label = (ym) => {
+    const [y, m] = ym.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", {
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+  };
+  const hasInvoiced = data.some((d) => d.invoiced_cents !== null);
+  const rows = data.map((d) => ({
+    month: label(d.month),
+    ...(hasInvoiced ? { invoiced: money(d.invoiced_cents) } : {}),
+    collected: money(d.collected_cents),
+  }));
+  const columns = [
+    { key: "month", label: "Month" },
+    ...(hasInvoiced
+      ? [{ key: "invoiced", label: "Invoiced", align: "right" }]
+      : []),
+    { key: "collected", label: "Collected", align: "right" },
+  ];
+  return {
+    months: rows,
+    total_collected: money(data.reduce((s, d) => s + d.collected_cents, 0)),
+    ...(hasInvoiced
+      ? {
+          total_invoiced: money(
+            data.reduce((s, d) => s + (d.invoiced_cents || 0), 0),
+          ),
+        }
+      : {}),
+    report: { title: "Revenue by month", columns, rows },
   };
 }
 
@@ -648,7 +766,14 @@ async function sendInvoiceReminders(userId, args) {
   };
 }
 
-const READ_TOOLS = { findClients, findInvoices, getBusinessMetrics };
+const READ_TOOLS = {
+  findClients,
+  findInvoices,
+  getBusinessMetrics,
+  getAgingReport,
+  getClientSummary,
+  getRevenueByPeriod,
+};
 const WRITE_TOOLS = {
   registerNewClient,
   draftNewInvoice,
@@ -707,6 +832,51 @@ const DECLARATIONS = [
     description:
       "Returns the user's invoicing numbers: total outstanding, total overdue, total collected, collected this month, counts of pending and overdue invoices, and number of clients. Does not calculate recurring revenue.",
     parameters: { type: "OBJECT", properties: {} },
+  },
+  {
+    name: "getAgingReport",
+    description:
+      "Unpaid invoices grouped by how late they are: not yet due, 1-30, 31-60, 61-90, and over 90 days overdue, with counts and totals. Use for questions like how much is overdue, how late are my invoices, or what do I have outstanding.",
+    parameters: { type: "OBJECT", properties: {} },
+  },
+  {
+    name: "getClientSummary",
+    description:
+      "Per-client numbers: outstanding, overdue, total paid, invoice count, and average days vs due date (positive means the client usually pays late). Use for who owes me the most, which clients pay late, or one client's balance and payment history. Pass clientName for a single client.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        clientName: {
+          type: "STRING",
+          description:
+            "Part of one client's name, to look at just that client.",
+        },
+        sortBy: {
+          type: "STRING",
+          enum: ["outstanding", "overdue", "paid", "invoices"],
+          description: "What to rank clients by. Defaults to outstanding.",
+        },
+        limit: {
+          type: "NUMBER",
+          description: "How many clients to return (1 to 20). Defaults to 5.",
+        },
+      },
+    },
+  },
+  {
+    name: "getRevenueByPeriod",
+    description:
+      "Totals per calendar month for the last N months: how much was invoiced and how much was collected (marked paid). Use for questions like how much did I bill or collect last month, or compare this month to last month.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        months: {
+          type: "NUMBER",
+          description:
+            "How many months back to include (1 to 24). Defaults to 6.",
+        },
+      },
+    },
   },
   {
     name: "registerNewClient",
@@ -882,6 +1052,8 @@ async function run({ userId, message, history }) {
     { role: "user", parts: [{ text: message }] },
   ];
 
+  let lastReport = null; // table data from an insight tool, shown under the reply
+
   for (let step = 0; step < MAX_STEPS; step++) {
     const response = await ai.models.generateContent({
       model: GEMINI_MODEL,
@@ -904,6 +1076,7 @@ async function run({ userId, message, history }) {
         message:
           response.text ||
           "Sorry, I couldn't come up with an answer. Please try again.",
+        ...(lastReport ? { report: lastReport } : {}),
       };
     }
 
@@ -924,6 +1097,11 @@ async function run({ userId, message, history }) {
       try {
         if (READ_TOOLS[name]) {
           output = await READ_TOOLS[name](userId, args);
+          if (output && output.report) {
+            lastReport = output.report; // for the app's table, not for the model
+            const { report: _report, ...forModel } = output;
+            output = forModel;
+          }
         } else if (WRITE_TOOLS[name]) {
           if (finished) {
             refusedExtra = true;

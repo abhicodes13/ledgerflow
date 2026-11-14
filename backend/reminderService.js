@@ -1,6 +1,7 @@
 const pool = require("./db");
 const { AppError } = require("./errors");
 const { sendEmail } = require("./emailService");
+const { renderReminderEmail } = require("./emailTemplates");
 
 const MAX_PER_ACTION = 50; // invoices per confirmed action
 const DAILY_LIMIT = 100; // reminder log rows per user per 24 hours
@@ -9,10 +10,6 @@ const MIN_HOURS_BETWEEN = 24; // don't remind about the same invoice more often 
 // ---------------------------------------------------------------------------
 // Small helpers
 // ---------------------------------------------------------------------------
-const money = (cents) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
-    (cents || 0) / 100,
-  );
 
 // Works for a "YYYY-MM-DD" string or a JS Date, without time-zone day shifts
 function toYmd(value) {
@@ -25,80 +22,12 @@ function toYmd(value) {
   return String(value).slice(0, 10);
 }
 
-function formatDate(value) {
-  const ymd = toYmd(value);
-  if (!ymd) return "-";
-  const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-const escapeHtml = (s) =>
-  String(s).replace(
-    /[&<>"']/g,
-    (ch) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        ch
-      ],
-  );
-
-// The tone gets firmer the longer an invoice has been overdue
+// The tone gets firmer the longer an invoice has been overdue.
+// It is decided at preview time, stored with the proposal, and logged.
 function toneFor(maxDaysOverdue) {
   if (maxDaysOverdue <= 7) return "friendly";
   if (maxDaysOverdue <= 30) return "firm";
   return "final";
-}
-
-function buildEmail({ senderName, clientName, invoices, tone }) {
-  const intro = {
-    friendly:
-      "This is a friendly reminder that the following invoice(s) are now past due.",
-    firm: "Our records show the following invoice(s) are past due. Please arrange payment as soon as possible.",
-    final:
-      "This is a final reminder: the following invoice(s) are significantly past due. Please arrange payment right away, or contact us if there is a problem.",
-  }[tone];
-
-  const total = invoices.reduce((sum, i) => sum + i.total_cents, 0);
-  const lineText = (i) =>
-    `- ${i.invoice_number}: ${money(i.total_cents)} (due ${formatDate(i.due_date)}, ${i.days_overdue} day(s) overdue)`;
-
-  const text = [
-    `Hi ${clientName},`,
-    "",
-    intro,
-    "",
-    ...invoices.map(lineText),
-    "",
-    `Total due: ${money(total)}`,
-    "",
-    "If you have already paid, please disregard this message. Reply to this email with any questions.",
-    "",
-    "Thank you,",
-    senderName,
-  ].join("\n");
-
-  const rows = invoices
-    .map(
-      (i) =>
-        `<tr><td style="padding:6px 12px 6px 0">${escapeHtml(i.invoice_number)}</td>` +
-        `<td style="padding:6px 12px">${money(i.total_cents)}</td>` +
-        `<td style="padding:6px 0 6px 12px;color:#6b7280">due ${formatDate(i.due_date)} (${i.days_overdue} day(s) overdue)</td></tr>`,
-    )
-    .join("");
-
-  const html =
-    `<div style="font-family:Arial,sans-serif;font-size:14px;color:#111827;line-height:1.5">` +
-    `<p>Hi ${escapeHtml(clientName)},</p><p>${intro}</p>` +
-    `<table style="border-collapse:collapse">${rows}</table>` +
-    `<p><strong>Total due: ${money(total)}</strong></p>` +
-    `<p>If you have already paid, please disregard this message. Reply to this email with any questions.</p>` +
-    `<p>Thank you,<br>${escapeHtml(senderName)}</p></div>`;
-
-  const subject = `Payment reminder from ${senderName}: ${invoices.length} overdue invoice${invoices.length === 1 ? "" : "s"}`;
-  return { subject, text, html };
 }
 
 // One log row per invoice for a single email
@@ -305,18 +234,29 @@ async function confirmReminders(userId, pendingActionId) {
       continue;
     }
 
-    const email = buildEmail({
-      senderName,
-      clientName: r.client_name,
-      invoices,
-      tone: r.tone,
-    });
     const invoiceIds = invoices.map((i) => i.id);
 
     try {
+      // Building the email is inside the try, so a problem with one client's
+      // email is logged as a failure and the rest of the batch still goes out.
+      const email = renderReminderEmail({
+        clientName: r.client_name,
+        senderName,
+        senderEmail: owner?.email,
+        invoices: invoices.map((i) => ({
+          invoiceNumber: i.invoice_number,
+          amountCents: i.total_cents,
+          dueDate: i.due_date,
+        })),
+        tone: r.tone, // the tone shown in the preview and stored in the log
+        // paymentUrl: ...  <- add the invoice's pay link here later for a "Pay now" button
+      });
+
       const { id: messageId, deliveredTo } = await sendEmail({
         to: r.client_email,
-        ...email,
+        subject: email.subject,
+        html: email.html,
+        text: email.text,
         replyTo: owner?.email,
       });
       await logRows(

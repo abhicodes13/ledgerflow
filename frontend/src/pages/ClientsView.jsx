@@ -238,6 +238,7 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
           />
           <Input
             label="Phone (optional)"
+            hint="Include the country code, like +12015551234. A 10-digit US number works too."
             type="tel"
             value={data.clientPhone || ""}
             onChange={(e) => data.setClientPhone(e.target.value)}

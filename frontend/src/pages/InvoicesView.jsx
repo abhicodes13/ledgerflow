@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import {
+  Badge,
   Button,
   Card,
   EmptyState,
@@ -34,7 +35,7 @@ import {
 } from "../lib/format";
 import { fetchPdfBlob, saveBlob } from "../lib/api";
 import { cn } from "../lib/cn";
-
+import { isPaidOnline } from "../lib/format";
 const FILTERS = [
   { id: "all", label: "All" },
   { id: "pending", label: "Pending" },
@@ -145,10 +146,10 @@ export function InvoicesView({
 
   // ── Detail actions ──
   const copyLink = async (inv) => {
-    const link = `${window.location.origin}/checkout/statement/${inv.invoice_number}`;
+    if (!inv.payment_url) return;
     try {
-      await navigator.clipboard.writeText(link);
-      toast.success("Link copied (preview: the checkout page isn't built yet)");
+      await navigator.clipboard.writeText(inv.payment_url);
+      toast.success("Payment link copied");
     } catch {
       toast.error("Couldn't copy to the clipboard");
     }
@@ -319,6 +320,7 @@ export function InvoicesView({
                         {inv.status !== "paid" && (
                           <RemindedNote invoice={inv} />
                         )}
+                        {isPaidOnline(inv) && " · Paid online"}
                       </p>
                     </div>
                     <p className="hidden w-36 text-sm text-fg-muted sm:block">
@@ -507,10 +509,12 @@ export function InvoicesView({
                 <Download className="h-4 w-4" aria-hidden />
                 Download PDF
               </Button>
-              <Button variant="secondary" onClick={() => copyLink(selected)}>
-                <Copy className="h-4 w-4" aria-hidden />
-                Copy link
-              </Button>
+              {selected.status !== "paid" && selected.payment_url && (
+                <Button variant="secondary" onClick={() => copyLink(selected)}>
+                  <Copy className="h-4 w-4" aria-hidden />
+                  Copy payment link
+                </Button>
+              )}
               {invoiceState(selected) === "overdue" && (
                 <Button
                   variant="secondary"
@@ -551,7 +555,12 @@ export function InvoicesView({
                   <p className="truncate text-sm text-fg-muted">{selEmail}</p>
                 )}
               </div>
-              <StatusBadge invoice={selected} />
+              <div className="flex flex-col items-end gap-1.5">
+                <StatusBadge invoice={selected} />
+                {isPaidOnline(selected) && (
+                  <Badge tone="success">Paid online</Badge>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4 rounded-xl bg-surface-2 p-4">

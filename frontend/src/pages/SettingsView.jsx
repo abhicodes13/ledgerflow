@@ -10,6 +10,7 @@ import {
 import { formatDate } from "../lib/format";
 import { PLAN } from "../lib/plan";
 import { cn } from "../lib/cn";
+import { Link } from "react-router-dom";
 
 const THEMES = [
   { id: "light", label: "Light", icon: Sun },
@@ -162,15 +163,17 @@ export function SettingsView({ theme, setTheme, currentUser, billing }) {
         <CardHeader
           title="Accept client payments"
           description="Let clients pay your invoices by card."
-          action={<Badge>Coming soon</Badge>}
         />
-        <div className="flex items-center justify-between gap-4 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4 p-5">
           <p className="text-sm text-fg-muted">
-            Route client payments straight to your account.
+            Connect Stripe and send clients a payment link.
           </p>
-          <Button variant="secondary" disabled>
-            Connect Stripe
-          </Button>
+          <Link
+            to="/app/settings/payments"
+            className="inline-flex h-10 items-center justify-center rounded-lg border border-border-strong bg-surface px-4 text-sm font-medium text-fg transition-colors hover:bg-surface-2"
+          >
+            Set up payments
+          </Link>
         </div>
       </Card>
     </>

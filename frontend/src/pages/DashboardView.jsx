@@ -120,6 +120,7 @@ export function DashboardView({
   currentUser,
   onNavigate,
   onRemind,
+  insights,
 }) {
   const toast = useToast();
   const [suggestion, setSuggestion] = useState(null);
@@ -212,7 +213,7 @@ export function DashboardView({
           loading={loading}
         />
       </section>
-
+      {insights}
       {/* Needs attention */}
 
       <Card>

@@ -34,6 +34,9 @@ import { invoiceState } from "./lib/format";
 import { tabToPath } from "./lib/routes";
 import { errorMessage, readError } from "./lib/api";
 import { API_ERROR_EVENT } from "./lib/apiGuard";
+import { AnalyticsSection } from "./components/AnalyticsSection";
+import { PaymentsView } from "./pages/PaymentsView";
+import { PayResultPage } from "./pages/PayResultPage";
 
 function App() {
   const data = useLedgerFlowData();
@@ -379,6 +382,20 @@ function App() {
         path="/reset-password"
         element={<ResetPasswordPage theme={theme} setTheme={setTheme} />}
       />
+      <Route
+        path="/pay/result"
+        element={<PayResultPage theme={theme} setTheme={setTheme} />}
+      />
+      {/* Stripe returns here after onboarding */}
+      <Route
+        path="/settings/payments"
+        element={
+          <Navigate
+            to={{ pathname: "/app/settings/payments", search: location.search }}
+            replace
+          />
+        }
+      />
 
       {/* Stripe currently returns users to /dashboard?payment=... */}
       <Route
@@ -403,6 +420,13 @@ function App() {
                 currentUser={data.currentUser}
                 onNavigate={setActiveTab}
                 onRemind={reminders.start}
+                insights={
+                  <AnalyticsSection
+                    apiBase={data.API_BASE}
+                    token={data.token}
+                    version={data.invoicesList}
+                  />
+                }
               />,
             )}
           />
@@ -450,6 +474,12 @@ function App() {
                 billing={billing}
               />
             }
+          />
+          <Route
+            path="settings/payments"
+            element={gated(
+              <PaymentsView apiBase={data.API_BASE} token={data.token} />,
+            )}
           />
           <Route
             path="estimates"

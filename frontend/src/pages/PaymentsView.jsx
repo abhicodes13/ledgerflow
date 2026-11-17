@@ -1,0 +1,223 @@
+import { useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  CreditCard,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  PageHeader,
+  Skeleton,
+  useToast,
+} from "../components/ui";
+import { useConnect } from "../hooks/useConnect";
+
+const BADGES = {
+  not_connected: <Badge>Not connected</Badge>,
+  incomplete: <Badge tone="warning">Setup incomplete</Badge>,
+  active: <Badge tone="success">Active</Badge>,
+};
+
+const STEPS = [
+  {
+    title: "Connect Stripe",
+    text: "Verify your details and add a bank account on Stripe's secure page.",
+  },
+  {
+    title: "Share a payment link",
+    text: "Copy the link from any unpaid invoice and send it to your client.",
+  },
+  {
+    title: "Get paid",
+    text: "Your client pays by card, and the invoice is marked paid for you.",
+  },
+];
+
+export function PaymentsView({ apiBase, token }) {
+  const toast = useToast();
+  const connect = useConnect({ apiBase, token, toast });
+  const { status, busy, refresh, start } = connect;
+
+  const [params, setParams] = useSearchParams();
+  const flag = params.get("connect");
+  // Stripe sends people back here with ?connect=return or ?connect=refresh (expired link)
+  const [expired] = useState(() => flag === "refresh");
+  const [checking, setChecking] = useState(false);
+  const handled = useRef(false);
+
+  useEffect(() => {
+    if (!flag || handled.current) return;
+    handled.current = true;
+    setParams({}, { replace: true }); // clean the address bar
+    if (flag !== "return") return;
+
+    (async () => {
+      // Stripe can take a moment to finish verifying
+      for (let i = 0; i < 4; i++) {
+        const next = await refresh();
+        if (next === "active") {
+          toast.success("Payments are ready. Clients can now pay online.");
+          return;
+        }
+        if (i < 3) await new Promise((r) => setTimeout(r, 2000));
+      }
+      toast.info(
+        "Stripe is still verifying your details. Check back in a few minutes.",
+      );
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flag]);
+
+  const checkNow = async () => {
+    setChecking(true);
+    await refresh();
+    setChecking(false);
+  };
+
+  return (
+    <>
+      <PageHeader
+        title="Payments"
+        description="Let clients pay your invoices online."
+        actions={
+          <Link
+            to="/app/settings"
+            className="inline-flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Settings
+          </Link>
+        }
+      />
+
+      {expired && status !== "active" && (
+        <div
+          role="status"
+          className="flex items-start gap-2.5 rounded-xl border border-warning/30 bg-warning-soft p-4 text-sm text-warning"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <p>
+            Your setup link expired. Choose Continue setup to get a fresh one.
+          </p>
+        </div>
+      )}
+
+      <Card>
+        <CardHeader
+          title="Online payments"
+          description="Powered by Stripe."
+          action={BADGES[status]}
+        />
+        <div className="space-y-5 p-5">
+          {status === "loading" && <Skeleton className="h-16 w-full" />}
+
+          {(status === "error" || status === "unknown") && (
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <p className="text-sm text-fg-muted">
+                We couldn't read your payment status right now.
+              </p>
+              <Button variant="secondary" onClick={checkNow} loading={checking}>
+                <RefreshCw className="h-4 w-4" aria-hidden />
+                Try again
+              </Button>
+            </div>
+          )}
+
+          {status === "not_connected" && (
+            <>
+              <p className="max-w-xl text-sm text-fg-muted">
+                Connect a Stripe account so clients can pay invoices by card.
+                You'll go to Stripe to verify your details and add a bank
+                account. It usually takes a few minutes.
+              </p>
+              <ol className="grid gap-4 sm:grid-cols-3">
+                {STEPS.map((s, i) => (
+                  <li key={s.title} className="flex gap-3">
+                    <span className="num grid h-7 w-7 shrink-0 place-items-center rounded-full bg-surface-2 text-xs font-semibold text-fg-muted">
+                      {i + 1}
+                    </span>
+                    <div>
+                      <p className="text-sm font-medium text-fg">{s.title}</p>
+                      <p className="mt-0.5 text-sm text-fg-muted">{s.text}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <Button onClick={start} loading={busy}>
+                <CreditCard className="h-4 w-4" aria-hidden />
+                Connect with Stripe
+              </Button>
+            </>
+          )}
+
+          {status === "incomplete" && (
+            <>
+              <p className="max-w-xl text-sm text-fg-muted">
+                Setup isn't finished. Stripe needs a few more details before you
+                can accept payments. Your progress is saved.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={start} loading={busy}>
+                  Continue setup
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={checkNow}
+                  loading={checking}
+                  disabled={busy}
+                >
+                  <RefreshCw className="h-4 w-4" aria-hidden />
+                  Check status
+                </Button>
+              </div>
+            </>
+          )}
+
+          {status === "active" && (
+            <>
+              <div className="flex items-start gap-2.5 rounded-xl border border-success/30 bg-success-soft p-4 text-sm text-fg">
+                <CheckCircle2
+                  className="mt-0.5 h-4 w-4 shrink-0 text-success"
+                  aria-hidden
+                />
+                <p>
+                  You're ready. Open an unpaid invoice and choose Copy payment
+                  link to send to your client.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  to="/app/invoices"
+                  className="inline-flex h-10 items-center justify-center rounded-lg bg-accent px-4 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover"
+                >
+                  Go to invoices
+                </Link>
+                <Button
+                  variant="secondary"
+                  onClick={checkNow}
+                  loading={checking}
+                >
+                  <RefreshCw className="h-4 w-4" aria-hidden />
+                  Refresh status
+                </Button>
+              </div>
+            </>
+          )}
+
+          <p className="flex items-center gap-2 border-t border-border pt-4 text-xs text-fg-subtle">
+            <ShieldCheck className="h-4 w-4 shrink-0" aria-hidden />
+            Payments are processed securely by Stripe, and Stripe's processing
+            fees apply.
+          </p>
+        </div>
+      </Card>
+    </>
+  );
+}

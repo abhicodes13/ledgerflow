@@ -28,6 +28,7 @@ const authService = require("./authService");
 const authenticateToken = require("./authMiddleware");
 const checkSubscription = require("./subscriptionMiddleware"); // paywall: use AFTER authenticateToken
 const paymentRouter = require("./payment");
+const connectRouter = require("./connect");
 const { AppError } = require("./errors");
 const { generateInvoicePdfStream } = require("./utils/invoiceGenerator");
 const { sendResetEmail } = require("./resetEmail");
@@ -106,6 +107,9 @@ app.use("/api/chat", rateLimit({ windowMs: 15 * 60 * 1000, max: 60 }));
 // Mounted BEFORE express.json() on purpose: Stripe webhooks need the raw body.
 app.use("/api/payment", paymentRouter);
 app.use(express.json({ limit: "100kb" }));
+
+// Stripe Connect: users connect their own Stripe account to get paid directly
+app.use("/api/connect", authenticateToken, checkSubscription, connectRouter);
 
 // =========================================================================
 // HEALTH

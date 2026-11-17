@@ -1,3 +1,4 @@
+
 export function formatCurrency(cents) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -101,4 +102,15 @@ export function invoiceClientEmail(inv, clients = []) {
       (c) => inv?.client_id != null && Number(c.id) === Number(inv.client_id),
     ) ?? clients.find((c) => c.name === inv?.client_name);
   return c?.email ?? "";
+}
+// True when an invoice was paid through an online payment link (uses the API's `paid_via`).
+export function isPaidOnline(inv) {
+  const via = String(inv?.paid_via ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    inv?.status === "paid" &&
+    via !== "" &&
+    !/^(manual|cash|check|cheque|offline|none)$/.test(via)
+  );
 }

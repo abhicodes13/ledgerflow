@@ -29,6 +29,8 @@ const authenticateToken = require("./authMiddleware");
 const checkSubscription = require("./subscriptionMiddleware"); // paywall: use AFTER authenticateToken
 const paymentRouter = require("./payment");
 const connectRouter = require("./connect");
+const payRouter = require("./pay");
+const connectWebhookRouter = require("./connectWebhook");
 const { AppError } = require("./errors");
 const { generateInvoicePdfStream } = require("./utils/invoiceGenerator");
 const { sendResetEmail } = require("./resetEmail");
@@ -106,10 +108,15 @@ app.use("/api/chat", rateLimit({ windowMs: 15 * 60 * 1000, max: 60 }));
 
 // Mounted BEFORE express.json() on purpose: Stripe webhooks need the raw body.
 app.use("/api/payment", paymentRouter);
+// Payments made to our users' connected accounts (also needs the raw body)
+app.use("/api/payment/connect-webhook", connectWebhookRouter);
 app.use(express.json({ limit: "100kb" }));
 
 // Stripe Connect: users connect their own Stripe account to get paid directly
 app.use("/api/connect", authenticateToken, checkSubscription, connectRouter);
+
+// Public pay links from invoice PDFs and emails: /pay/<token> -> Stripe Checkout
+app.use("/pay", payRouter);
 
 // =========================================================================
 // HEALTH

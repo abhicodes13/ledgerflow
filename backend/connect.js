@@ -1,6 +1,7 @@
 const express = require("express");
 const rateLimit = require("express-rate-limit");
 const connectService = require("./connectService");
+const paymentLinks = require("./paymentLinks");
 const { AppError } = require("./errors");
 
 // Mounted in server.js behind authenticateToken and checkSubscription:
@@ -52,5 +53,25 @@ router.post(
     }
   },
 );
+
+// The online payment link for one of the user's invoices.
+// -> { success, enabled, url, reason }
+//    enabled false means no link: reason is invoice_not_pending,
+//    payments_not_set_up, amount_too_small, or not_configured.
+router.get("/invoices/:id/payment-link", async (req, res) => {
+  try {
+    const invoiceId = Number(req.params.id);
+    if (!Number.isInteger(invoiceId) || invoiceId < 1) {
+      throw new AppError("Invalid invoice id", 400);
+    }
+    const link = await paymentLinks.getInvoicePaymentLink(
+      userIdOf(req),
+      invoiceId,
+    );
+    return res.json({ success: true, ...link });
+  } catch (error) {
+    return fail(res, error, "payment link failed");
+  }
+});
 
 module.exports = router;

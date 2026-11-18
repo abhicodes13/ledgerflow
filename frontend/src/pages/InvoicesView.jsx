@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   CheckCircle2,
   ChevronRight,
   Copy,
+  CreditCard,
   Download,
   FileText,
   Mail,
@@ -30,12 +32,14 @@ import {
   invoiceAmountCents,
   invoiceClientEmail,
   invoiceState,
+  isPaidOnline,
   lastRemindedOf,
   timeAgo,
 } from "../lib/format";
 import { fetchPdfBlob, saveBlob } from "../lib/api";
+import { usePaymentLink } from "../hooks/usePaymentLink";
 import { cn } from "../lib/cn";
-import { isPaidOnline } from "../lib/format";
+
 const FILTERS = [
   { id: "all", label: "All" },
   { id: "pending", label: "Pending" },
@@ -106,6 +110,16 @@ export function InvoicesView({
 
   const itemsLoading = !!selected && detail.id !== selected.id;
 
+  // Online payment link for the open invoice (only unpaid, non-void invoices can be paid)
+  const payable =
+    !!selected && selected.status !== "paid" && selected.status !== "void";
+  const payLink = usePaymentLink({
+    apiBase: data.API_BASE,
+    token: data.token,
+    invoiceId: selected?.id,
+    active: payable,
+  });
+
   // ── Create invoice ──
   const updateItem = (index, field, value) =>
     data.setItems(
@@ -145,10 +159,10 @@ export function InvoicesView({
   };
 
   // ── Detail actions ──
-  const copyLink = async (inv) => {
-    if (!inv.payment_url) return;
+  const copyPaymentLink = async () => {
+    if (!payLink.url) return;
     try {
-      await navigator.clipboard.writeText(inv.payment_url);
+      await navigator.clipboard.writeText(payLink.url);
       toast.success("Payment link copied");
     } catch {
       toast.error("Couldn't copy to the clipboard");
@@ -509,8 +523,8 @@ export function InvoicesView({
                 <Download className="h-4 w-4" aria-hidden />
                 Download PDF
               </Button>
-              {selected.status !== "paid" && selected.payment_url && (
-                <Button variant="secondary" onClick={() => copyLink(selected)}>
+              {payLink.url && (
+                <Button variant="secondary" onClick={copyPaymentLink}>
                   <Copy className="h-4 w-4" aria-hidden />
                   Copy payment link
                 </Button>
@@ -577,6 +591,40 @@ export function InvoicesView({
                 </p>
               </div>
             </div>
+
+            {payable && payLink.status === "ready" && !payLink.url && (
+              <div className="flex items-start gap-2.5 rounded-lg bg-surface-2 p-3 text-sm text-fg-muted">
+                <CreditCard
+                  className="mt-0.5 h-4 w-4 shrink-0 text-fg-subtle"
+                  aria-hidden
+                />
+                {payLink.reason === "payments_not_set_up" ? (
+                  <span>
+                    Online payments aren't set up yet. Connect Stripe in{" "}
+                    <Link
+                      to="/app/settings/payments"
+                      className="font-medium text-accent hover:underline"
+                    >
+                      Settings → Payments
+                    </Link>
+                    .
+                  </span>
+                ) : payLink.reason === "invalid_link" ? (
+                  <span>
+                    The payment link has an unexpected format, so it can't be
+                    copied. Please contact support.
+                  </span>
+                ) : (
+                  <span>Online payment isn't available for this invoice.</span>
+                )}
+              </div>
+            )}
+            {payable && payLink.status === "error" && (
+              <p className="text-xs text-fg-subtle">
+                Couldn't check whether online payment is available. Close and
+                reopen this invoice to try again.
+              </p>
+            )}
 
             {selected.status !== "paid" && selReminded.known && (
               <p className="text-xs text-fg-subtle">

@@ -19,6 +19,7 @@ const LEFT = 50; // left margin
 const RIGHT = 545; // right edge of content (A4 width 595 - 50)
 const CONTENT_W = RIGHT - LEFT;
 const FOOTER_RESERVE = 90; // space kept free at the bottom of each page
+const PAY_BLOCK_HEIGHT = 78; // room needed for the "Pay online" button and link
 
 // ---------------------------------------------------------------------------
 // Date helpers
@@ -58,6 +59,27 @@ function getStatus(invoice) {
   return { label: "DUE", color: COLORS.due };
 }
 
+// Only https links go into a PDF. (Plain http is allowed for localhost while
+// developing, so the button can be tested on your own machine.)
+function safePayUrl(value) {
+  if (!value) return null;
+  try {
+    const url = new URL(String(value));
+    if (url.protocol === "https:") return url.toString();
+    const local = ["localhost", "127.0.0.1"].includes(url.hostname);
+    if (
+      url.protocol === "http:" &&
+      local &&
+      process.env.NODE_ENV !== "production"
+    ) {
+      return url.toString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Streams a professional invoice PDF to the response.
  *
@@ -65,7 +87,9 @@ function getStatus(invoice) {
  * @param {Object} invoice       invoices row + client_name, client_email, (optional) client_phone, notes
  * @param {Array}  invoiceItems  rows with description, quantity, unit_amount_cents
  * @param {Object} business      optional sender info: { name, email, phone, address, paymentInstructions }
- * @param {Object} options       optional: { currency: "USD", showBranding: true }
+ * @param {Object} options       optional: { currency: "USD", showBranding: true, paymentUrl }
+ *                               paymentUrl adds a clickable "Pay online" button. It only
+ *                               appears on unpaid, non-void invoices.
  */
 function generateInvoicePdfStream(
   res,
@@ -83,6 +107,10 @@ function generateInvoicePdfStream(
   const safeNumber = String(invoice.invoice_number).replace(/[^\w.-]/g, "_");
   const status = getStatus(invoice);
   const isPaid = invoice.status === "paid";
+  const payUrl =
+    !isPaid && invoice.status !== "void"
+      ? safePayUrl(options.paymentUrl)
+      : null;
 
   const doc = new PDFDocument({
     size: "A4",
@@ -276,10 +304,10 @@ function generateInvoicePdfStream(
   }
 
   // -------------------------------------------------------------------------
-  // 4. Totals
+  // 4. Totals (and the "Pay online" button, when there is a payment link)
   // -------------------------------------------------------------------------
   y += 18;
-  if (y + 90 > pageBottom()) {
+  if (y + 90 + (payUrl ? PAY_BLOCK_HEIGHT : 0) > pageBottom()) {
     doc.addPage();
     y = 50;
   }
@@ -313,7 +341,28 @@ function generateInvoicePdfStream(
     .fontSize(14)
     .fillColor(COLORS.accent)
     .text(money(amountDue), 445, y + 9, { width: 94, align: "right" });
-  y += 32 + 28;
+  y += 32;
+
+  if (payUrl) {
+    // A real link annotation: clicking the button opens the payment page.
+    // The address is also printed in small type for anyone reading a paper copy.
+    y += 12;
+    doc.roundedRect(345, y, 200, 34, 6).fill(COLORS.accent);
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(11)
+      .fillColor("#ffffff")
+      .text("Pay online", 345, y + 11, { width: 200, align: "center" });
+    doc.link(345, y, 200, 34, payUrl);
+    y += 34 + 6;
+    doc
+      .font("Helvetica")
+      .fontSize(7)
+      .fillColor(COLORS.muted)
+      .text(payUrl, 345, y, { width: 200, align: "right", link: payUrl });
+    y = doc.y;
+  }
+  y += 28;
 
   // -------------------------------------------------------------------------
   // 5. Payment instructions / notes
@@ -332,7 +381,9 @@ function generateInvoicePdfStream(
         ? ["THANK YOU", "Payment received. Thank you for your business."]
         : [
             "PAYMENT",
-            `Please include invoice number ${invoice.invoice_number} with your payment.`,
+            payUrl
+              ? `Pay online with the button above, or include invoice number ${invoice.invoice_number} with your payment.`
+              : `Please include invoice number ${invoice.invoice_number} with your payment.`,
           ],
     );
   }

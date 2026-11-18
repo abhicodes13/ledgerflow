@@ -2,6 +2,7 @@ const pool = require("./db");
 const { AppError } = require("./errors");
 const { sendEmail } = require("./emailService");
 const { renderReminderEmail } = require("./emailTemplates");
+const paymentLinks = require("./paymentLinks");
 
 const MAX_PER_ACTION = 50; // invoices per confirmed action
 const DAILY_LIMIT = 100; // reminder log rows per user per 24 hours
@@ -239,6 +240,19 @@ async function confirmReminders(userId, pendingActionId) {
     try {
       // Building the email is inside the try, so a problem with one client's
       // email is logged as a failure and the rest of the batch still goes out.
+      // Online payment links, one per invoice. They only exist when the user has
+      // connected Stripe and the invoice is payable. A problem here must never
+      // stop the reminder itself, so any failure just means "no button".
+      const payUrls = new Map();
+      for (const inv of invoices) {
+        try {
+          const link = await paymentLinks.getInvoicePaymentLink(userId, inv.id);
+          if (link.enabled) payUrls.set(inv.id, link.url);
+        } catch (linkError) {
+          console.warn(`No pay link for invoice ${inv.id}:`, linkError.message);
+        }
+      }
+
       const email = renderReminderEmail({
         clientName: r.client_name,
         senderName,
@@ -247,9 +261,9 @@ async function confirmReminders(userId, pendingActionId) {
           invoiceNumber: i.invoice_number,
           amountCents: i.total_cents,
           dueDate: i.due_date,
+          paymentUrl: payUrls.get(i.id), // undefined = no button for this invoice
         })),
         tone: r.tone, // the tone shown in the preview and stored in the log
-        // paymentUrl: ...  <- add the invoice's pay link here later for a "Pay now" button
       });
 
       const { id: messageId, deliveredTo } = await sendEmail({

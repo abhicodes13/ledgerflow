@@ -15,8 +15,8 @@ const RESULTS = {
   success: {
     tone: "success",
     icon: CheckCircle2,
-    title: "Thank you!",
-    text: "Your payment was submitted. It can take a moment to show as paid.",
+    title: "Thank you, payment received",
+    text: "Your payment went through. You can close this page.",
   },
   cancelled: {
     tone: "neutral",
@@ -30,11 +30,23 @@ const RESULTS = {
     title: "Already paid",
     text: "This invoice has already been paid. There's nothing more to do.",
   },
+  void: {
+    tone: "neutral",
+    icon: XCircle,
+    title: "Invoice cancelled",
+    text: "This invoice was cancelled, so there's nothing to pay. Please contact the sender if you have questions.",
+  },
   unavailable: {
     tone: "warning",
     icon: AlertTriangle,
     title: "Payment link unavailable",
-    text: "This link may have expired, or online payments aren't available for this invoice. Please contact the business that sent it.",
+    text: "This payment link isn't available. Please contact the sender.",
+  },
+  invalid: {
+    tone: "warning",
+    icon: AlertTriangle,
+    title: "Payment link not valid",
+    text: "This payment link isn't valid. Check that you used the whole link, or contact the sender.",
   },
 };
 
@@ -72,9 +84,6 @@ export function PayResultPage({ theme, setTheme }) {
             {r.title}
           </h1>
           <p className="mt-2 text-sm text-fg-muted">{r.text}</p>
-          <p className="mt-6 text-xs text-fg-subtle">
-            You can close this page.
-          </p>
         </Card>
       </main>
     </div>

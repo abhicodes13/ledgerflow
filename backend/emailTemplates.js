@@ -60,11 +60,22 @@ const formatDate = (ymd) =>
   });
 
 // Only real https links become buttons. Anything else is dropped.
+// (Plain http is allowed for localhost while developing, so you can test the
+// button on your own machine. In production it is https only.)
 function safeUrl(value) {
   if (!value) return null;
   try {
     const url = new URL(String(value));
-    return url.protocol === "https:" ? url.toString() : null;
+    if (url.protocol === "https:") return url.toString();
+    const local = ["localhost", "127.0.0.1"].includes(url.hostname);
+    if (
+      url.protocol === "http:" &&
+      local &&
+      process.env.NODE_ENV !== "production"
+    ) {
+      return url.toString();
+    }
+    return null;
   } catch {
     return null;
   }
@@ -79,8 +90,13 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 //   clientName,            // who the email is addressed to
 //   senderName,            // the business or person who is owed money
 //   senderEmail,           // optional, shown so the client knows who to contact
-//   invoices: [{ invoiceNumber, amountCents, dueDate: "YYYY-MM-DD" }],
-//   paymentUrl,            // optional https link; adds a "Pay now" button
+//   invoices: [{ invoiceNumber, amountCents, dueDate: "YYYY-MM-DD", paymentUrl? }],
+//                          // paymentUrl is an optional https pay link for that one invoice
+//   paymentUrl,            // optional https link that covers the whole email (rarely needed)
+//
+// Pay links: one link pays one invoice. A single-invoice email gets a big
+// "Pay" button. With several invoices, each row gets its own "Pay now" link.
+// No links at all? The email says to reply to arrange payment.
 //   tone,                  // optional: "friendly" | "firm" | "final" (auto by default)
 //   today,                 // optional "YYYY-MM-DD", for testing
 // })
@@ -91,11 +107,11 @@ function renderReminderEmail(opts) {
   const senderName = String(opts.senderName || "Your service provider").trim();
   const senderEmail = opts.senderEmail ? String(opts.senderEmail).trim() : "";
   const today = opts.today ? parseYmd(opts.today) : todayUtc();
-  const paymentUrl = safeUrl(opts.paymentUrl);
 
   const all = (opts.invoices || [])
     .map((inv) => ({
       number: String(inv.invoiceNumber || "").trim(),
+      url: safeUrl(inv.paymentUrl), // only real https links survive
       cents: Number(inv.amountCents) || 0,
       dueDate: String(inv.dueDate).slice(0, 10),
       daysOverdue: Math.max(0, daysBetween(parseYmd(inv.dueDate), today)),
@@ -109,6 +125,11 @@ function renderReminderEmail(opts) {
   const maxDays = Math.max(...all.map((i) => i.daysOverdue));
   const single = all.length === 1;
   const first = all[0];
+
+  // Big button: for a single invoice (its own link) or an email-wide link.
+  // Several invoices with their own links get a "Pay now" link in each row.
+  const paymentUrl = safeUrl(opts.paymentUrl) || (single ? first.url : null);
+  const rowLinks = !single && !paymentUrl && all.some((i) => i.url);
 
   const tone = TONES[opts.tone]
     ? opts.tone
@@ -172,10 +193,14 @@ function renderReminderEmail(opts) {
     : `simply reply to this email`;
   const payLine = paymentUrl
     ? "You can pay online using the button above."
-    : `To arrange payment, ${contact}.`;
+    : rowLinks
+      ? "You can pay each invoice online using the Pay now link next to it."
+      : `To arrange payment, ${contact}.`;
   const payLineText = paymentUrl
     ? "You can pay online using the link above."
-    : payLine;
+    : rowLinks
+      ? "You can pay each invoice online using the link listed with it."
+      : payLine;
 
   // ---- Invoice rows ------------------------------------------------------
   const shown = all.slice(0, MAX_ROWS);
@@ -187,7 +212,11 @@ function renderReminderEmail(opts) {
         <tr>
           <td class="text" style="padding:12px 0;border-top:1px solid #e5e7eb;font:500 14px ${FONT};color:#111827;">${esc(i.number)}</td>
           <td class="muted" style="padding:12px 0;border-top:1px solid #e5e7eb;font:14px ${FONT};color:#6b7280;">${esc(formatDate(i.dueDate))}${i.daysOverdue > 0 ? `<br><span style="font-size:12px;color:${accent};">${esc(plural(i.daysOverdue, "day"))} overdue</span>` : ""}</td>
-          <td class="text" align="right" style="padding:12px 0;border-top:1px solid #e5e7eb;font:600 14px ${FONT};color:#111827;white-space:nowrap;">${esc(money(i.cents))}</td>
+          <td class="text" align="right" style="padding:12px 0;border-top:1px solid #e5e7eb;font:600 14px ${FONT};color:#111827;white-space:nowrap;">${esc(money(i.cents))}${
+            rowLinks && i.url
+              ? `<br><a href="${esc(i.url)}" target="_blank" style="font:600 13px ${FONT};color:${accent};text-decoration:none;">Pay now &rarr;</a>`
+              : ""
+          }</td>
         </tr>`,
     )
     .join("");
@@ -316,7 +345,7 @@ function renderReminderEmail(opts) {
     "",
     ...shown.map(
       (i) =>
-        `- ${i.number}: ${money(i.cents)}, due ${formatDate(i.dueDate)}${i.daysOverdue > 0 ? ` (${plural(i.daysOverdue, "day")} overdue)` : ""}`,
+        `- ${i.number}: ${money(i.cents)}, due ${formatDate(i.dueDate)}${i.daysOverdue > 0 ? ` (${plural(i.daysOverdue, "day")} overdue)` : ""}${rowLinks && i.url ? `\n  Pay online: ${i.url}` : ""}`,
     ),
     ...(hidden > 0
       ? [`- and ${hidden} more invoice${hidden === 1 ? "" : "s"}`]

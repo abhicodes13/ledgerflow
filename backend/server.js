@@ -30,6 +30,7 @@ const checkSubscription = require("./subscriptionMiddleware"); // paywall: use A
 const paymentRouter = require("./payment");
 const connectRouter = require("./connect");
 const payRouter = require("./pay");
+const paymentLinks = require("./paymentLinks");
 const connectWebhookRouter = require("./connectWebhook");
 const { AppError } = require("./errors");
 const { generateInvoicePdfStream } = require("./utils/invoiceGenerator");
@@ -463,11 +464,32 @@ app.get(
       );
       const owner = ownerResult.rows[0] || {};
 
+      // An online payment link, only for unpaid invoices of users who have
+      // connected Stripe. If it can't be made, the PDF is still produced.
+      let paymentUrl = null;
+      if (invoice.status === "pending") {
+        try {
+          const link = await paymentLinks.getInvoicePaymentLink(
+            userId,
+            invoiceId,
+          );
+          if (link.enabled) paymentUrl = link.url;
+        } catch (linkError) {
+          console.warn(
+            `No pay link for invoice ${invoiceId}:`,
+            linkError.message,
+          );
+        }
+      }
+
       // The generator sets the PDF headers and streams the file
-      generateInvoicePdfStream(res, invoice, itemsResult.rows, {
-        name: owner.username,
-        email: owner.email,
-      });
+      generateInvoicePdfStream(
+        res,
+        invoice,
+        itemsResult.rows,
+        { name: owner.username, email: owner.email },
+        { paymentUrl },
+      );
     } catch (error) {
       if (!res.headersSent) return sendError(res, error, "pdf failed");
       res.end();

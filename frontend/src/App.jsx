@@ -37,6 +37,7 @@ import { API_ERROR_EVENT } from "./lib/apiGuard";
 import { AnalyticsSection } from "./components/AnalyticsSection";
 import { PaymentsView } from "./pages/PaymentsView";
 import { PayResultPage } from "./pages/PayResultPage";
+import { useLiveInvoices } from "./hooks/useLiveInvoices";
 
 function App() {
   const data = useLedgerFlowData();
@@ -70,6 +71,17 @@ function App() {
   });
 
   const location = useLocation();
+  // Pick up payments that happen elsewhere (a client paying on Stripe)
+  const onLivePage =
+    location.pathname === "/app" || location.pathname === "/app/invoices";
+  useLiveInvoices({
+    enabled: !!data.token && onLivePage && !billing.isBlocked,
+    hasUnpaid: (data.invoicesList || []).some((i) => i.status !== "paid"),
+    refresh: () => {
+      data.fetchInvoicesList();
+      data.fetchMetrics();
+    },
+  });
   const navigate = useNavigate();
   const setActiveTab = (id) => navigate(tabToPath(id));
 

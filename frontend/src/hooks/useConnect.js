@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { errorMessage } from "../lib/api";
 
 // The Connect API is still a draft, so this is the only place that reads its status payload.
+// Returns: "not_connected" | "incomplete" | "restricted" | "active" | "unknown"
 export function readConnectStatus(payload) {
   const p = payload?.data ?? payload?.account ?? payload ?? {};
   const raw = String(p.status ?? p.state ?? "")
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
+
   if (
     [
       "active",
@@ -18,13 +20,14 @@ export function readConnectStatus(payload) {
     ].includes(raw)
   )
     return "active";
+  if (["restricted", "restricted_soon", "rejected", "disabled"].includes(raw))
+    return "restricted";
   if (
     [
+      "onboarding_incomplete",
       "incomplete",
       "pending",
       "onboarding",
-      "onboarding_incomplete",
-      "restricted",
       "requires_action",
       "in_progress",
     ].includes(raw)
@@ -40,6 +43,7 @@ export function readConnectStatus(payload) {
     ].includes(raw)
   )
     return "not_connected";
+
   if (p.charges_enabled === true || p.payments_enabled === true)
     return "active";
   if (p.connected === false) return "not_connected";
@@ -63,7 +67,7 @@ function safeHttps(value) {
   }
 }
 
-// status: "loading" | "not_connected" | "incomplete" | "active" | "unknown" | "error"
+// status: "loading" | "not_connected" | "incomplete" | "restricted" | "active" | "unknown" | "error"
 export function useConnect({ apiBase, token, toast }) {
   const [status, setStatus] = useState("loading");
   const [busy, setBusy] = useState(false);

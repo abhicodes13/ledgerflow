@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   CreditCard,
+  ExternalLink,
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
@@ -17,28 +18,16 @@ import {
   Skeleton,
   useToast,
 } from "../components/ui";
+import { OnboardingTour } from "../components/payments/OnboardingTour";
 import { useConnect } from "../hooks/useConnect";
 
+// Everything except "active" and "not started" means: finish setting up
 const BADGES = {
   not_connected: <Badge>Not connected</Badge>,
-  incomplete: <Badge tone="warning">Setup incomplete</Badge>,
-  active: <Badge tone="success">Active</Badge>,
+  incomplete: <Badge tone="warning">Finish setting up</Badge>,
+  restricted: <Badge tone="warning">Finish setting up</Badge>,
+  active: <Badge tone="success">Payments enabled</Badge>,
 };
-
-const STEPS = [
-  {
-    title: "Connect Stripe",
-    text: "Verify your details and add a bank account on Stripe's secure page.",
-  },
-  {
-    title: "Share a payment link",
-    text: "Copy the link from any unpaid invoice and send it to your client.",
-  },
-  {
-    title: "Get paid",
-    text: "Your client pays by card, and the invoice is marked paid for you.",
-  },
-];
 
 export function PaymentsView({ apiBase, token }) {
   const toast = useToast();
@@ -63,7 +52,7 @@ export function PaymentsView({ apiBase, token }) {
       for (let i = 0; i < 4; i++) {
         const next = await refresh();
         if (next === "active") {
-          toast.success("Payments are ready. Clients can now pay online.");
+          toast.success("Payments are enabled. Clients can now pay online.");
           return;
         }
         if (i < 3) await new Promise((r) => setTimeout(r, 2000));
@@ -80,6 +69,8 @@ export function PaymentsView({ apiBase, token }) {
     await refresh();
     setChecking(false);
   };
+
+  const finishSetup = status === "incomplete" || status === "restricted";
 
   return (
     <>
@@ -134,38 +125,26 @@ export function PaymentsView({ apiBase, token }) {
             <>
               <p className="max-w-xl text-sm text-fg-muted">
                 Connect a Stripe account so clients can pay invoices by card.
-                You'll go to Stripe to verify your details and add a bank
-                account. It usually takes a few minutes.
+                Here's what to expect before you go to Stripe.
               </p>
-              <ol className="grid gap-4 sm:grid-cols-3">
-                {STEPS.map((s, i) => (
-                  <li key={s.title} className="flex gap-3">
-                    <span className="num grid h-7 w-7 shrink-0 place-items-center rounded-full bg-surface-2 text-xs font-semibold text-fg-muted">
-                      {i + 1}
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium text-fg">{s.title}</p>
-                      <p className="mt-0.5 text-sm text-fg-muted">{s.text}</p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
+              <OnboardingTour />
               <Button onClick={start} loading={busy}>
                 <CreditCard className="h-4 w-4" aria-hidden />
-                Connect with Stripe
+                Connect Stripe
               </Button>
             </>
           )}
 
-          {status === "incomplete" && (
+          {finishSetup && (
             <>
               <p className="max-w-xl text-sm text-fg-muted">
-                Setup isn't finished. Stripe needs a few more details before you
-                can accept payments. Your progress is saved.
+                {status === "restricted"
+                  ? "Stripe needs a bit more information before you can accept payments. Your details so far are saved."
+                  : "Setup isn't finished. Stripe needs a few more details before you can accept payments. Your progress is saved."}
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button onClick={start} loading={busy}>
-                  Continue setup
+                  Finish setting up payments
                 </Button>
                 <Button
                   variant="secondary"
@@ -188,8 +167,8 @@ export function PaymentsView({ apiBase, token }) {
                   aria-hidden
                 />
                 <p>
-                  You're ready. Open an unpaid invoice and choose Copy payment
-                  link to send to your client.
+                  Payments are enabled. Open an unpaid invoice and choose Copy
+                  payment link to send to your client.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -199,15 +178,23 @@ export function PaymentsView({ apiBase, token }) {
                 >
                   Go to invoices
                 </Link>
-                <Button
-                  variant="secondary"
-                  onClick={checkNow}
-                  loading={checking}
+                <a
+                  href="https://dashboard.stripe.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border-strong bg-surface px-4 text-sm font-medium text-fg transition-colors hover:bg-surface-2"
                 >
+                  Manage in Stripe
+                  <ExternalLink className="h-4 w-4" aria-hidden />
+                </a>
+                <Button variant="ghost" onClick={checkNow} loading={checking}>
                   <RefreshCw className="h-4 w-4" aria-hidden />
                   Refresh status
                 </Button>
               </div>
+              <p className="text-xs text-fg-subtle">
+                Use Stripe for refunds, disputes, and payout settings.
+              </p>
             </>
           )}
 

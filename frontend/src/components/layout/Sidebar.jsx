@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
-import { LogOut, Sparkles } from "lucide-react";
+import { LogOut, Search, Sparkles } from "lucide-react";
 import { cn } from "../../lib/cn";
+import { shortcutLabel } from "../../lib/platform";
 import { NAV, SOON_NAV } from "./nav";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
@@ -23,6 +24,7 @@ export function Sidebar({
   drawerOpen,
   onToggleConsole,
   onToggleDrawer,
+  onOpenSearch,
 }) {
   const name = currentUser?.username || "Account";
 
@@ -53,6 +55,21 @@ export function Sidebar({
         </NavLink>
       </div>
 
+      <div className="px-3 pb-2">
+        <button
+          type="button"
+          onClick={onOpenSearch}
+          aria-label={`Search or jump to. Shortcut ${shortcutLabel}`}
+          className="flex w-full items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
+        >
+          <Search className="h-4 w-4" aria-hidden />
+          <span className="flex-1 text-left">Search or jump to...</span>
+          <kbd className="num rounded border border-border bg-surface px-1.5 text-[10px] font-medium text-fg-subtle">
+            {shortcutLabel}
+          </kbd>
+        </button>
+      </div>
+
       <nav aria-label="Main" className="flex-1 overflow-y-auto px-3 py-2">
         <div className="space-y-1">
           {NAV.map(({ id, label, icon: Icon, to, end }) => (
@@ -69,7 +86,7 @@ export function Sidebar({
         </div>
 
         <p className="mb-1 mt-6 px-3 text-xs font-medium text-fg-subtle">
-          Coming soon
+          Preview
         </p>
         <div className="space-y-1">
           {SOON_NAV.map(({ id, label, icon: Icon, to }) => (
@@ -77,7 +94,7 @@ export function Sidebar({
               <Icon className="h-[18px] w-[18px]" aria-hidden />
               <span className="flex-1">{label}</span>
               <span className="rounded-full bg-surface-2 px-1.5 text-[10px] font-medium leading-5 text-fg-subtle">
-                Soon
+                Preview
               </span>
             </NavLink>
           ))}

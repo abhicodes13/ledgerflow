@@ -1,5 +1,5 @@
 import { useLocation } from "react-router-dom";
-import { LogOut, Sparkles } from "lucide-react";
+import { LogOut, Search, Sparkles } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { Button } from "../ui";
 import { Logo } from "./Logo";
@@ -18,6 +18,7 @@ export function AppShell({
   onToggleConsole,
   onToggleDrawer,
   onCloseDrawer,
+  onOpenSearch,
   assistant,
   children,
 }) {
@@ -35,6 +36,7 @@ export function AppShell({
         drawerOpen={drawerOpen}
         onToggleConsole={onToggleConsole}
         onToggleDrawer={onToggleDrawer}
+        onOpenSearch={onOpenSearch}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -43,6 +45,14 @@ export function AppShell({
           <div className="flex h-14 items-center justify-between px-4">
             <Logo />
             <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onOpenSearch}
+                aria-label="Search or jump to"
+              >
+                <Search className="h-4 w-4" aria-hidden />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -78,7 +88,7 @@ export function AppShell({
           <aside
             aria-label="AI assistant"
             className={cn(
-              "fixed inset-y-0 right-0 z-50 max-xl:h-dvh w-[min(24rem,100vw)] border-l border-border bg-surface shadow-[var(--shadow-pop)]",
+              "fixed inset-y-0 right-0 z-50 w-[min(24rem,100vw)] border-l border-border bg-surface shadow-[var(--shadow-pop)] max-xl:h-dvh",
               "transition-[transform,visibility] duration-300 ease-out",
               "xl:visible xl:static xl:z-auto xl:w-96 xl:shrink-0 xl:translate-x-0 xl:shadow-none",
               drawerOpen

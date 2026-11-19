@@ -1,26 +1,29 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
+  Check,
   CheckCircle2,
+  Copy,
   FileText,
   Mail,
   Percent,
+  Plus,
   Sparkles,
   Wallet,
 } from "lucide-react";
 import {
-  Badge,
   Button,
   Card,
   CardHeader,
   EmptyState,
-  Modal,
   PageHeader,
   Skeleton,
   StatusBadge,
   useToast,
 } from "../components/ui";
+import { RemindedNote } from "../components/ReminderModal";
+import { copyPaymentLink, paymentLinkMessage } from "../lib/paymentLink";
 import {
   daysUntilDue,
   formatCurrency,
@@ -29,27 +32,25 @@ import {
   invoiceState,
 } from "../lib/format";
 import { cn } from "../lib/cn";
-import { RemindedNote } from "../components/ReminderModal";
 
-// Suggestions are placeholders until the AI backend supplies real ones.
-const SUGGESTIONS = [
+const PROMPTS = [
   {
-    id: "rec_01",
-    title: "Send reminders for overdue invoices",
-    description:
-      "Email a polite reminder to every client who has an overdue invoice.",
-    impact: "Could speed up collections",
-    actionType: "batch_remind",
-    payload: { targets: "all_overdue" },
+    icon: Mail,
+    title: "Send overdue reminders",
+    text: "Prepare emails for every overdue invoice.",
+    prompt: "Send reminders for my overdue invoices",
   },
   {
-    id: "rec_02",
-    title: "Draft a first invoice for new clients",
-    description:
-      "Clients with no invoices yet can get a starter invoice from a template.",
-    impact: "Gets new clients billed sooner",
-    actionType: "draft_initial",
-    payload: { template: "baseline_retainer" },
+    icon: Sparkles,
+    title: "How is my business doing?",
+    text: "A quick summary of what's owed and collected.",
+    prompt: "How is my business doing?",
+  },
+  {
+    icon: FileText,
+    title: "Invoice a client",
+    text: "Tell the assistant who, and how much.",
+    prompt: "Invoice ",
   },
 ];
 
@@ -63,6 +64,7 @@ const TONE_STYLES = {
 function dueLabel(inv) {
   if (inv.status === "paid") return "Paid";
   const d = daysUntilDue(inv.due_date);
+  // The server decides what's overdue, so the text never contradicts the badge
   if (invoiceState(inv) === "overdue" && (d === null || d >= 0))
     return "Overdue";
   if (d === null) return "No due date";
@@ -113,18 +115,101 @@ function RowSkeleton() {
   );
 }
 
+// Copy payment link, Remind (overdue only), and Mark paid, right on the row
+function AttentionActions({ inv, apiBase, token, onRemind, onSettle }) {
+  const toast = useToast();
+  const [linking, setLinking] = useState(false);
+  const [armed, setArmed] = useState(false);
+  const [settling, setSettling] = useState(false);
+  const timer = useRef(null);
+
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  const copy = async () => {
+    if (linking) return;
+    setLinking(true);
+    const r = await copyPaymentLink(apiBase, token, inv.id);
+    setLinking(false);
+    if (r.ok) toast.success(`Payment link for ${inv.invoice_number} copied`);
+    else if (r.error) toast.error(r.error);
+    else toast.info(paymentLinkMessage(r.reason));
+  };
+
+  // Marking paid can't be undone, so the first tap arms the button for 4 seconds
+  const settle = async () => {
+    if (settling) return;
+    if (!armed) {
+      setArmed(true);
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => setArmed(false), 4000);
+      return;
+    }
+    clearTimeout(timer.current);
+    setSettling(true);
+    await onSettle?.(inv.id);
+    setSettling(false);
+    setArmed(false);
+  };
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <Button
+        variant="ghost"
+        size="sm"
+        loading={linking}
+        onClick={copy}
+        aria-label={`Copy payment link for ${inv.invoice_number}`}
+        title="Copy payment link"
+      >
+        {!linking && <Copy className="h-3.5 w-3.5" aria-hidden />}
+      </Button>
+
+      {invoiceState(inv) === "overdue" && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onRemind?.([inv.id])}
+          aria-label={`Send a reminder for ${inv.invoice_number}`}
+          title="Send reminder"
+        >
+          <Mail className="h-3.5 w-3.5" aria-hidden />
+        </Button>
+      )}
+
+      <Button
+        variant={armed ? "primary" : "secondary"}
+        size="sm"
+        loading={settling}
+        onClick={settle}
+        aria-label={
+          armed
+            ? `Confirm marking ${inv.invoice_number} as paid`
+            : `Mark ${inv.invoice_number} as paid`
+        }
+      >
+        {!settling && <Check className="h-3.5 w-3.5" aria-hidden />}
+        {armed ? "Confirm?" : "Mark paid"}
+      </Button>
+    </div>
+  );
+}
+
 export function DashboardView({
   metrics,
   invoicesList,
   loading = false,
   currentUser,
+  apiBase,
+  token,
   onNavigate,
+  onNewInvoice,
+  onOpenInvoice,
   onRemind,
+  onSettle,
+  onAskAssistant,
   insights,
+  checklist,
 }) {
-  const toast = useToast();
-  const [suggestion, setSuggestion] = useState(null);
-
   const all = invoicesList || [];
   const unpaid = all.filter((inv) => inv.status !== "paid");
   const overdue = unpaid.filter((inv) => invoiceState(inv) === "overdue");
@@ -168,12 +253,14 @@ export function DashboardView({
         title={name ? `${greeting}, ${name}` : greeting}
         description={`${clientCount} client${clientCount === 1 ? "" : "s"} · ${all.length} invoice${all.length === 1 ? "" : "s"}`}
         actions={
-          <Button onClick={() => onNavigate?.("billing")}>
-            <FileText className="h-4 w-4" aria-hidden />
-            Go to invoices
+          <Button onClick={() => onNewInvoice?.()}>
+            <Plus className="h-4 w-4" aria-hidden />
+            New invoice
           </Button>
         }
       />
+
+      {checklist}
 
       {/* Key numbers */}
       <section
@@ -213,9 +300,8 @@ export function DashboardView({
           loading={loading}
         />
       </section>
-      {insights}
-      {/* Needs attention */}
 
+      {/* Needs attention */}
       <Card>
         <CardHeader
           title="Needs attention"
@@ -262,9 +348,13 @@ export function DashboardView({
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="num text-sm font-medium text-fg">
+                    <button
+                      type="button"
+                      onClick={() => onOpenInvoice?.(inv.id)}
+                      className="num text-sm font-medium text-fg hover:text-accent hover:underline"
+                    >
                       {inv.invoice_number}
-                    </span>
+                    </button>
                     <StatusBadge invoice={inv} />
                   </div>
                   <p className="mt-0.5 truncate text-sm text-fg-muted">
@@ -273,20 +363,17 @@ export function DashboardView({
                     <RemindedNote invoice={inv} />
                   </p>
                 </div>
-                <div className="flex items-center justify-between gap-4 sm:justify-end">
+                <div className="flex items-center justify-between gap-3 sm:justify-end">
                   <span className="num text-sm font-semibold text-fg">
                     {formatCurrency(invoiceAmountCents(inv))}
                   </span>
-                  {invoiceState(inv) === "overdue" && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => onRemind?.([inv.id])}
-                    >
-                      <Mail className="h-3.5 w-3.5" aria-hidden />
-                      Remind
-                    </Button>
-                  )}
+                  <AttentionActions
+                    inv={inv}
+                    apiBase={apiBase}
+                    token={token}
+                    onRemind={onRemind}
+                    onSettle={onSettle}
+                  />
                 </div>
               </li>
             ))}
@@ -314,7 +401,7 @@ export function DashboardView({
               title="No invoices yet"
               description="Create your first invoice to see it here."
               action={
-                <Button size="sm" onClick={() => onNavigate?.("billing")}>
+                <Button size="sm" onClick={() => onNewInvoice?.()}>
                   Create invoice
                 </Button>
               }
@@ -322,92 +409,64 @@ export function DashboardView({
           ) : (
             <ul className="divide-y divide-border">
               {recent.map((inv) => (
-                <li
-                  key={inv.id}
-                  className="flex items-center justify-between gap-4 px-5 py-3.5"
-                >
-                  <div className="min-w-0">
-                    <p className="num text-sm font-medium text-fg">
-                      {inv.invoice_number}
-                    </p>
-                    <p className="truncate text-sm text-fg-muted">
-                      {inv.client_name}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <StatusBadge invoice={inv} />
-                    <span className="num w-24 text-right text-sm text-fg">
-                      {formatCurrency(invoiceAmountCents(inv))}
-                    </span>
-                  </div>
+                <li key={inv.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenInvoice?.(inv.id)}
+                    className="flex w-full items-center justify-between gap-4 px-5 py-3.5 text-left transition-colors hover:bg-surface-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="num text-sm font-medium text-fg">
+                        {inv.invoice_number}
+                      </p>
+                      <p className="truncate text-sm text-fg-muted">
+                        {inv.client_name}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <StatusBadge invoice={inv} />
+                      <span className="num w-24 text-right text-sm text-fg">
+                        {formatCurrency(invoiceAmountCents(inv))}
+                      </span>
+                    </div>
+                  </button>
                 </li>
               ))}
             </ul>
           )}
         </Card>
 
-        {/* AI suggestions */}
+        {/* Ask the assistant */}
         <Card>
           <CardHeader
-            title="AI suggestions"
-            description="Ideas to save you time."
-            action={<Badge tone="accent">Preview</Badge>}
+            title="Ask the assistant"
+            description="Fills the chat for you. Press Send, then confirm."
           />
           <ul className="divide-y divide-border">
-            {SUGGESTIONS.map((rec) => (
-              <li key={rec.id} className="flex items-start gap-3 px-5 py-4">
-                <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
-                  <Sparkles className="h-4 w-4" aria-hidden />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-fg">{rec.title}</p>
-                  <p className="mt-0.5 text-sm text-fg-muted">
-                    {rec.description}
-                  </p>
-                  <p className="mt-1 text-xs text-fg-subtle">{rec.impact}</p>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setSuggestion(rec)}
+            {PROMPTS.map(({ icon: Icon, title, text, prompt }) => (
+              <li key={title}>
+                <button
+                  type="button"
+                  onClick={() => onAskAssistant?.(prompt)}
+                  className="flex w-full items-start gap-3 px-5 py-4 text-left transition-colors hover:bg-surface-2"
                 >
-                  Review
-                </Button>
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+                    <Icon className="h-4 w-4" aria-hidden />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-fg">
+                      {title}
+                    </span>
+                    <span className="block text-sm text-fg-muted">{text}</span>
+                  </span>
+                </button>
               </li>
             ))}
           </ul>
         </Card>
       </div>
 
-      <Modal
-        open={!!suggestion}
-        onOpenChange={(open) => !open && setSuggestion(null)}
-        title={suggestion?.title ?? ""}
-        description="Review before anything runs."
-        size="sm"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setSuggestion(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                toast.info(
-                  "This is a preview. Suggestions aren't connected to the backend yet.",
-                );
-                setSuggestion(null);
-              }}
-            >
-              Run action
-            </Button>
-          </>
-        }
-      >
-        <p className="text-sm text-fg-muted">{suggestion?.description}</p>
-        <p className="mt-3 rounded-lg bg-surface-2 px-3 py-2 text-xs text-fg-subtle">
-          Action: <span className="num">{suggestion?.actionType}</span>
-        </p>
-      </Modal>
+      {insights}
     </>
   );
 }

@@ -352,6 +352,48 @@ app.patch(
   },
 );
 
+// Line items for one invoice (for the invoice detail view).
+// -> { success, items: [{ id, description, quantity, unit_amount_cents,
+//      line_total_cents }], total_cents }
+app.get(
+  "/api/invoices/:id/items",
+  authenticateToken,
+  checkSubscription,
+  async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const invoiceId = Number(req.params.id);
+      if (!Number.isInteger(invoiceId) || invoiceId < 1) {
+        throw new AppError("Invalid invoice id", 400);
+      }
+
+      // Only the owner can read an invoice's items
+      const owned = await pool.query(
+        "SELECT id FROM invoices WHERE id = $1 AND user_id = $2",
+        [invoiceId, userId],
+      );
+      if (!owned.rows[0]) throw new AppError("Invoice not found", 404);
+
+      const result = await pool.query(
+        `SELECT id, description, quantity, unit_amount_cents
+         FROM invoice_items WHERE invoice_id = $1 ORDER BY id`,
+        [invoiceId],
+      );
+      const items = result.rows.map((r) => ({
+        id: r.id,
+        description: r.description,
+        quantity: Number(r.quantity),
+        unit_amount_cents: Number(r.unit_amount_cents),
+        line_total_cents: Number(r.quantity) * Number(r.unit_amount_cents),
+      }));
+      const total = items.reduce((sum, i) => sum + i.line_total_cents, 0);
+      return res.json({ success: true, items, total_cents: total });
+    } catch (error) {
+      return sendError(res, error, "invoice items failed");
+    }
+  },
+);
+
 // =========================================================================
 // ANALYTICS
 // =========================================================================

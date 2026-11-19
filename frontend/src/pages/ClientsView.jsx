@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Copy, Plus, Users } from "lucide-react";
 import {
   Button,
@@ -32,7 +33,25 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [selected, setSelected] = useState(null);
+  // Deep links: /app/clients?new=1 opens the form, ?client=ID opens that client
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    const wantNew = params.get("new") === "1";
+    const wantId = params.get("client");
+    if (!wantNew && !wantId) return;
 
+    if (wantId) {
+      const list = data.clientsList || [];
+      const found = list.find((c) => String(c.id) === wantId);
+      if (!found) {
+        if (list.length > 0) setParams({}, { replace: true });
+        return;
+      }
+      setSelected(found);
+    }
+    if (wantNew) setCreateOpen(true);
+    setParams({}, { replace: true });
+  }, [params, setParams, data.clientsList]);
   const clients = data.clientsList || [];
 
   // Matches by client_id when the API provides it, otherwise by name.

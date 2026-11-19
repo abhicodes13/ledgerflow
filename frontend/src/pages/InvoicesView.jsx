@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   CheckCircle2,
   ChevronRight,
@@ -66,6 +66,26 @@ export function InvoicesView({
   const [downloading, setDownloading] = useState(false);
   // Line items for the open invoice. Loading = detail.id !== selected.id
   const [detail, setDetail] = useState({ id: null, items: [] });
+  // Deep links: /app/invoices?new=1 opens the form, ?invoice=ID opens that invoice
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    const wantNew = params.get("new") === "1";
+    const wantId = params.get("invoice");
+    if (!wantNew && !wantId) return;
+
+    if (wantId) {
+      const list = data.invoicesList || [];
+      const found = list.find((i) => String(i.id) === wantId);
+      if (!found) {
+        // Wait while the list loads. Once it has, a missing invoice just drops the link.
+        if (list.length > 0) setParams({}, { replace: true });
+        return;
+      }
+      setSelected(found);
+    }
+    if (wantNew) setCreateOpen(true);
+    setParams({}, { replace: true });
+  }, [params, setParams, data.invoicesList]);
 
   const formItems =
     Array.isArray(data.items) && data.items.length ? data.items : [blankItem()];

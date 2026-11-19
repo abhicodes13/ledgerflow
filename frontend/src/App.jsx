@@ -12,12 +12,16 @@ import { useTheme } from "./hooks/useTheme";
 import { useBilling, usePaymentReturn } from "./hooks/useBilling";
 import { useReminders } from "./hooks/useReminders";
 import { useAssistant } from "./hooks/useAssistant";
+import { useLiveInvoices } from "./hooks/useLiveInvoices";
 import { useToast } from "./components/ui";
 import { AppShell } from "./components/layout/AppShell";
 import { AuthScreen } from "./components/layout/AuthScreen";
 import { RequireAuth } from "./components/RequireAuth";
 import { AIConsole } from "./components/AIConsole";
 import { ReminderModal } from "./components/ReminderModal";
+import { AnalyticsSection } from "./components/AnalyticsSection";
+import { CommandPalette } from "./components/CommandPalette";
+import { GettingStarted } from "./components/GettingStarted";
 import { LandingPage } from "./pages/LandingPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PaywallView } from "./pages/PaywallView";
@@ -26,6 +30,8 @@ import { InvoicesView } from "./pages/InvoicesView";
 import { ClientsView } from "./pages/ClientsView";
 import { AutomationsView } from "./pages/AutomationsView";
 import { SettingsView } from "./pages/SettingsView";
+import { PaymentsView } from "./pages/PaymentsView";
+import { PayResultPage } from "./pages/PayResultPage";
 import { EstimatesView } from "./pages/EstimatesView";
 import { SignaturesView } from "./pages/SignaturesView";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
@@ -34,10 +40,6 @@ import { invoiceState } from "./lib/format";
 import { tabToPath } from "./lib/routes";
 import { errorMessage, readError } from "./lib/api";
 import { API_ERROR_EVENT } from "./lib/apiGuard";
-import { AnalyticsSection } from "./components/AnalyticsSection";
-import { PaymentsView } from "./pages/PaymentsView";
-import { PayResultPage } from "./pages/PayResultPage";
-import { useLiveInvoices } from "./hooks/useLiveInvoices";
 
 function App() {
   const data = useLedgerFlowData();
@@ -71,6 +73,9 @@ function App() {
   });
 
   const location = useLocation();
+  const navigate = useNavigate();
+  const setActiveTab = (id) => navigate(tabToPath(id));
+
   // Pick up payments that happen elsewhere (a client paying on Stripe)
   const onLivePage =
     location.pathname === "/app" || location.pathname === "/app/invoices";
@@ -82,12 +87,11 @@ function App() {
       data.fetchMetrics();
     },
   });
-  const navigate = useNavigate();
-  const setActiveTab = (id) => navigate(tabToPath(id));
 
   // Assistant panel visibility
   const [isConsoleVisible, setIsConsoleVisible] = useState(true);
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // Auth form state
   const [isRegistering, setIsRegistering] = useState(false);
@@ -280,14 +284,20 @@ function App() {
     }
   };
 
-  // Used by the Automations shortcuts: fill the chat and show the assistant
-  const askAssistant = (text) => {
+  // Fill the chat, show the assistant, and focus the box
+  const askAssistant = (text = "") => {
     assistant.setInput(text);
     if (window.matchMedia("(min-width: 1280px)").matches) {
       setIsConsoleVisible(true);
     } else {
       setIsMobileChatOpen(true);
     }
+    // On smaller screens the panel slides in, so wait for it to be visible
+    setTimeout(() => {
+      document
+        .querySelector('input[aria-label="Message the assistant"]')
+        ?.focus();
+    }, 350);
   };
 
   const filteredInvoices =
@@ -320,6 +330,7 @@ function App() {
       onToggleConsole={() => setIsConsoleVisible((v) => !v)}
       onToggleDrawer={() => setIsMobileChatOpen((v) => !v)}
       onCloseDrawer={() => setIsMobileChatOpen(false)}
+      onOpenSearch={() => setPaletteOpen(true)}
       assistant={
         <AIConsole
           messages={assistant.messages}
@@ -329,8 +340,6 @@ function App() {
           onSend={assistant.send}
           onConfirm={assistant.confirm}
           onCancel={assistant.cancel}
-          clients={data.clientsList}
-          invoices={data.invoicesList}
           onClose={() => {
             setIsConsoleVisible(false);
             setIsMobileChatOpen(false);
@@ -340,6 +349,19 @@ function App() {
     >
       <Outlet />
       <ReminderModal reminders={reminders} />
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        invoices={data.invoicesList}
+        clients={data.clientsList}
+        overdueCount={overdueCount}
+        theme={theme}
+        setTheme={setTheme}
+        onGo={(path) => navigate(path)}
+        onRemind={() => reminders.start()}
+        onAskAssistant={askAssistant}
+        onLogout={handleLogout}
+      />
     </AppShell>
   );
 
@@ -398,7 +420,8 @@ function App() {
         path="/pay/result"
         element={<PayResultPage theme={theme} setTheme={setTheme} />}
       />
-      {/* Stripe returns here after onboarding */}
+
+      {/* Stripe returns here after Connect onboarding */}
       <Route
         path="/settings/payments"
         element={
@@ -430,8 +453,25 @@ function App() {
                 invoicesList={data.invoicesList}
                 loading={data.loading}
                 currentUser={data.currentUser}
+                apiBase={data.API_BASE}
+                token={data.token}
                 onNavigate={setActiveTab}
+                onNewInvoice={() => navigate("/app/invoices?new=1")}
+                onOpenInvoice={(id) => navigate(`/app/invoices?invoice=${id}`)}
                 onRemind={reminders.start}
+                onSettle={handleSettleInternal}
+                onAskAssistant={askAssistant}
+                checklist={
+                  <GettingStarted
+                    apiBase={data.API_BASE}
+                    token={data.token}
+                    username={data.currentUser?.username}
+                    loading={data.loading}
+                    clients={data.clientsList}
+                    invoices={data.invoicesList}
+                    onGo={(path) => navigate(path)}
+                  />
+                }
                 insights={
                   <AnalyticsSection
                     apiBase={data.API_BASE}

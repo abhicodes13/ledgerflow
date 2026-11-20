@@ -112,3 +112,10 @@ export function isPaidOnline(inv) {
       .toLowerCase() === "stripe"
   );
 }
+// A calendar date N days from today ("YYYY-MM-DD"), in the user's own time zone
+export function dateInDays(days = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}

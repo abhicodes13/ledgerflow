@@ -11,6 +11,7 @@ import { formatDate } from "../lib/format";
 import { PLAN } from "../lib/plan";
 import { cn } from "../lib/cn";
 import { Link } from "react-router-dom";
+import { InstallCard } from "../components/InstallCard";
 
 const THEMES = [
   { id: "light", label: "Light", icon: Sun },
@@ -132,6 +133,7 @@ export function SettingsView({ theme, setTheme, currentUser, billing }) {
       </Card>
 
       <BillingCard billing={billing} />
+      <InstallCard />
 
       <Card>
         <CardHeader

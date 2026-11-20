@@ -26,7 +26,10 @@ import {
   useToast,
 } from "../components/ui";
 import { RemindedNote } from "../components/ReminderModal";
+import { NewClientInline } from "../components/NewClientInline";
 import {
+  dateInDays,
+  daysUntilDue,
   formatCurrency,
   formatDate,
   invoiceAmountCents,
@@ -36,7 +39,9 @@ import {
   lastRemindedOf,
   timeAgo,
 } from "../lib/format";
+import { exportInvoices } from "../lib/exports";
 import { fetchPdfBlob, saveBlob } from "../lib/api";
+import { getTerms, rememberTerms } from "../lib/terms";
 import { usePaymentLink } from "../hooks/usePaymentLink";
 import { cn } from "../lib/cn";
 
@@ -47,6 +52,14 @@ const FILTERS = [
   { id: "paid", label: "Paid" },
 ];
 
+const DUE_PRESETS = [
+  { label: "On receipt", days: 0 },
+  { label: "Net 15", days: 15 },
+  { label: "Net 30", days: 30 },
+  { label: "Net 45", days: 45 },
+];
+
+const NEW_CLIENT = "__new__";
 const blankItem = () => ({ description: "", quantity: 1, price: "" });
 
 export function InvoicesView({
@@ -54,18 +67,25 @@ export function InvoicesView({
   filteredInvoices,
   handleInvoiceSubmitInternal,
   handleSettleInternal,
-  onNavigate,
   onRemind,
 }) {
   const toast = useToast();
   const [filter, setFilter] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
+  const [addingClient, setAddingClient] = useState(false);
+  const [pendingClient, setPendingClient] = useState(null); // a client just added, waiting for the list to refresh
   const [submitting, setSubmitting] = useState(false);
   const [selected, setSelected] = useState(null);
   const [settling, setSettling] = useState(false);
   const [downloading, setDownloading] = useState(false);
   // Line items for the open invoice. Loading = detail.id !== selected.id
   const [detail, setDetail] = useState({ id: null, items: [] });
+
+  const username = data.currentUser?.username;
+  const clients = data.clientsList || [];
+  // The inline form shows when asked for, or when there are no clients yet
+  const showInline = !pendingClient && (addingClient || clients.length === 0);
+
   // Deep links: /app/invoices?new=1 opens the form, ?invoice=ID opens that invoice
   const [params, setParams] = useSearchParams();
   useEffect(() => {
@@ -86,6 +106,21 @@ export function InvoicesView({
     if (wantNew) setCreateOpen(true);
     setParams({}, { replace: true });
   }, [params, setParams, data.invoicesList]);
+
+  // After adding a client inline, select them as soon as the refreshed list has them
+  useEffect(() => {
+    if (!pendingClient) return;
+    const found = clients.find(
+      (c) =>
+        (pendingClient.id != null &&
+          String(c.id) === String(pendingClient.id)) ||
+        String(c.email ?? "").toLowerCase() === pendingClient.email,
+    );
+    if (!found) return;
+    data.setSelectedClientId(String(found.id));
+    setPendingClient(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingClient, data.clientsList]);
 
   const formItems =
     Array.isArray(data.items) && data.items.length ? data.items : [blankItem()];
@@ -141,6 +176,30 @@ export function InvoicesView({
   });
 
   // ── Create invoice ──
+  const changeCreateOpen = (open) => {
+    setCreateOpen(open);
+    if (!open) {
+      setAddingClient(false);
+      setPendingClient(null);
+    }
+  };
+
+  const chooseClient = (value) => {
+    setPendingClient(null);
+    if (value === NEW_CLIENT) {
+      setAddingClient(true);
+      data.setSelectedClientId("");
+      return;
+    }
+    setAddingClient(false);
+    data.setSelectedClientId(value);
+    // Pre-fill the due date with this client's usual terms, unless one is already set
+    if (value && !data.dueDate) {
+      const days = getTerms(username, value);
+      if (days !== null) data.setDueDate(dateInDays(days));
+    }
+  };
+
   const updateItem = (index, field, value) =>
     data.setItems(
       formItems.map((item, i) =>
@@ -172,10 +231,23 @@ export function InvoicesView({
 
   const submitInvoice = async (e) => {
     e.preventDefault();
+    // Read these now: the form is cleared as soon as the invoice is saved
+    const clientId = data.selectedClientId;
+    const days = daysUntilDue(data.dueDate);
     setSubmitting(true);
     const ok = await handleInvoiceSubmitInternal(e);
     setSubmitting(false);
-    if (ok) setCreateOpen(false);
+    if (ok) {
+      rememberTerms(username, clientId, days);
+      changeCreateOpen(false);
+    }
+  };
+
+  const exportCsv = () => {
+    exportInvoices(visible, data.clientsList);
+    toast.success(
+      `Exported ${visible.length} invoice${visible.length === 1 ? "" : "s"}`,
+    );
   };
 
   // ── Detail actions ──
@@ -288,13 +360,24 @@ export function InvoicesView({
               </button>
             ))}
           </div>
-          <SearchInput
-            aria-label="Search invoices"
-            placeholder="Search invoice or client..."
-            value={data.searchTerm || ""}
-            onChange={(e) => data.setSearchTerm(e.target.value)}
-            className="w-full lg:w-72"
-          />
+          <div className="flex gap-2">
+            <SearchInput
+              aria-label="Search invoices"
+              placeholder="Search invoice or client..."
+              value={data.searchTerm || ""}
+              onChange={(e) => data.setSearchTerm(e.target.value)}
+              className="min-w-0 flex-1 lg:w-72 lg:flex-none"
+            />
+            <Button
+              variant="secondary"
+              className="shrink-0"
+              onClick={exportCsv}
+              disabled={visible.length === 0}
+            >
+              <Download className="h-4 w-4" aria-hidden />
+              Export CSV
+            </Button>
+          </div>
         </div>
 
         <Card className="overflow-hidden">
@@ -385,13 +468,13 @@ export function InvoicesView({
       {/* ── New invoice ── */}
       <Modal
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={changeCreateOpen}
         title="New invoice"
         description="Add the details and line items."
         size="xl"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setCreateOpen(false)}>
+            <Button variant="secondary" onClick={() => changeCreateOpen(false)}>
               Cancel
             </Button>
             <Button
@@ -406,35 +489,20 @@ export function InvoicesView({
         }
       >
         <form id="invoice-form" onSubmit={submitInvoice} className="space-y-6">
-          {(data.clientsList?.length ?? 0) === 0 && (
-            <div className="rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm text-warning">
-              You need a client first.{" "}
-              <button
-                type="button"
-                className="font-medium underline"
-                onClick={() => {
-                  setCreateOpen(false);
-                  onNavigate?.("customers");
-                }}
-              >
-                Add a client
-              </button>
-            </div>
-          )}
-
           <div className="grid gap-4 sm:grid-cols-3">
             <Select
               label="Client"
-              value={data.selectedClientId || ""}
-              onChange={(e) => data.setSelectedClientId(e.target.value)}
+              value={showInline ? NEW_CLIENT : data.selectedClientId || ""}
+              onChange={(e) => chooseClient(e.target.value)}
               required
             >
               <option value="">Select a client</option>
-              {data.clientsList?.map((c) => (
+              {clients.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
               ))}
+              <option value={NEW_CLIENT}>+ New client…</option>
             </Select>
             <Input
               label="Invoice number (optional)"
@@ -443,14 +511,56 @@ export function InvoicesView({
               onChange={(e) => data.setInvoiceNumber(e.target.value)}
               placeholder="Assigned automatically"
             />
-            <Input
-              label="Due date"
-              type="date"
-              value={data.dueDate || ""}
-              onChange={(e) => data.setDueDate(e.target.value)}
-              required
-            />
+            <div className="space-y-2">
+              <Input
+                label="Due date"
+                type="date"
+                value={data.dueDate || ""}
+                onChange={(e) => data.setDueDate(e.target.value)}
+                required
+              />
+              <div
+                role="group"
+                aria-label="Due date presets"
+                className="flex flex-wrap gap-1.5"
+              >
+                {DUE_PRESETS.map((p) => {
+                  const active = data.dueDate === dateInDays(p.days);
+                  return (
+                    <button
+                      key={p.days}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => data.setDueDate(dateInDays(p.days))}
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                        active
+                          ? "border-accent bg-accent-soft text-accent"
+                          : "border-border text-fg-muted hover:bg-surface-2 hover:text-fg",
+                      )}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
+
+          {showInline && (
+            <NewClientInline
+              apiBase={data.API_BASE}
+              token={data.token}
+              canCancel={clients.length > 0}
+              onCancel={() => setAddingClient(false)}
+              onCreated={({ id, email }) => {
+                setAddingClient(false);
+                setPendingClient({ id, email });
+                data.fetchClientsList();
+                data.fetchMetrics();
+              }}
+            />
+          )}
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">

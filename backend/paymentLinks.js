@@ -165,6 +165,12 @@ async function startCheckout(token) {
         payment_intent_data: {
           description: `Invoice ${row.invoice_number}`,
           metadata,
+          // Stripe emails the client a receipt (live payments only). Setting it here
+          // means it is sent even if the user never turned receipts on in their own
+          // Stripe Dashboard. The receipt shows the user's business name, not ours.
+          ...(EMAIL_RE.test(row.client_email || "")
+            ? { receipt_email: row.client_email }
+            : {}),
           ...(fee > 0 ? { application_fee_amount: fee } : {}),
         },
         success_url: resultUrl("success"),

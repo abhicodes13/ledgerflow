@@ -5,9 +5,10 @@ import "./index.css";
 import App from "./App.jsx";
 import { ToastProvider } from "./components/ui";
 import { installApiGuard } from "./lib/apiGuard";
+import { setupPwa } from "./lib/pwa";
 
 installApiGuard();
-
+setupPwa();
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <BrowserRouter>

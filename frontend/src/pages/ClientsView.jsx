@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Copy, Plus, Users } from "lucide-react";
+import { Copy, Download, Plus, Users } from "lucide-react";
 import {
   Button,
   Card,
@@ -14,6 +14,7 @@ import {
   useToast,
 } from "../components/ui";
 import { formatCurrency, formatDate, invoiceAmountCents } from "../lib/format";
+import { exportClients } from "../lib/exports";
 import { cn } from "../lib/cn";
 
 const initials = (name = "") =>
@@ -33,6 +34,7 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [selected, setSelected] = useState(null);
+
   // Deep links: /app/clients?new=1 opens the form, ?client=ID opens that client
   const [params, setParams] = useSearchParams();
   useEffect(() => {
@@ -52,6 +54,7 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
     if (wantNew) setCreateOpen(true);
     setParams({}, { replace: true });
   }, [params, setParams, data.clientsList]);
+
   const clients = data.clientsList || [];
 
   // Matches by client_id when the API provides it, otherwise by name.
@@ -97,6 +100,17 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
     if (ok) setCreateOpen(false);
   };
 
+  const exportCsv = () => {
+    const rows = visible.map((c) => ({
+      ...c,
+      ...(stats.get(c.id) ?? { count: 0, billed: 0, outstanding: 0 }),
+    }));
+    exportClients(rows);
+    toast.success(
+      `Exported ${rows.length} client${rows.length === 1 ? "" : "s"}`,
+    );
+  };
+
   const copyText = async (text, label) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -123,13 +137,24 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
       />
 
       <div className="space-y-4">
-        <SearchInput
-          aria-label="Search clients"
-          placeholder="Search by name, email, or phone..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="w-full sm:max-w-xs"
-        />
+        <div className="flex gap-2">
+          <SearchInput
+            aria-label="Search clients"
+            placeholder="Search by name, email, or phone..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="min-w-0 flex-1 sm:max-w-xs sm:flex-none"
+          />
+          <Button
+            variant="secondary"
+            className="shrink-0"
+            onClick={exportCsv}
+            disabled={visible.length === 0}
+          >
+            <Download className="h-4 w-4" aria-hidden />
+            Export CSV
+          </Button>
+        </div>
 
         <Card className="overflow-hidden">
           {data.loading ? (
@@ -261,7 +286,7 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
             type="tel"
             value={data.clientPhone || ""}
             onChange={(e) => data.setClientPhone(e.target.value)}
-            placeholder="+1 555 123 4567"
+            placeholder="+12015551234"
             autoComplete="tel"
           />
         </form>

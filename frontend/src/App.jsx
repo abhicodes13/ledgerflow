@@ -40,6 +40,7 @@ import { invoiceState } from "./lib/format";
 import { tabToPath } from "./lib/routes";
 import { errorMessage, readError } from "./lib/api";
 import { API_ERROR_EVENT } from "./lib/apiGuard";
+import { usePaidAlerts } from "./hooks/usePaidAlerts";
 
 function App() {
   const data = useLedgerFlowData();
@@ -76,13 +77,19 @@ function App() {
   const navigate = useNavigate();
   const setActiveTab = (id) => navigate(tabToPath(id));
 
-  // Pick up payments that happen elsewhere (a client paying on Stripe)
-  const onLivePage =
-    location.pathname === "/app" || location.pathname === "/app/invoices";
+  // Pick up payments that happen elsewhere (a client paying on Stripe) and say so
+  const markBackgroundRefresh = usePaidAlerts({
+    invoices: data.invoicesList,
+    toast,
+  });
   useLiveInvoices({
-    enabled: !!data.token && onLivePage && !billing.isBlocked,
+    enabled:
+      !!data.token &&
+      location.pathname.startsWith("/app") &&
+      !billing.isBlocked,
     hasUnpaid: (data.invoicesList || []).some((i) => i.status !== "paid"),
     refresh: () => {
+      markBackgroundRefresh();
       data.fetchInvoicesList();
       data.fetchMetrics();
     },

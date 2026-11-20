@@ -16,7 +16,7 @@ export function CardHeader({ title, description, action, className }) {
   return (
     <div
       className={cn(
-        "flex items-start justify-between gap-4 border-b border-border px-5 py-4",
+        "flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4",
         className,
       )}
     >
@@ -26,7 +26,7 @@ export function CardHeader({ title, description, action, className }) {
           <p className="mt-0.5 text-sm text-fg-muted">{description}</p>
         )}
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }

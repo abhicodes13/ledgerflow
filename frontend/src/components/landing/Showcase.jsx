@@ -63,7 +63,7 @@ function Frame({ title, children }) {
 /* ───────── Slide 1: AI assistant ───────── */
 
 const AI_TIMES = [2000, 3200, 5200];
-const AI_MESSAGE = "Add a client named Acme Corp, billing@acme.co";
+const AI_MESSAGE = "Add a client named Freepal Corp, billing@freepal.co";
 
 function AiScene() {
   const step = useSequence(AI_TIMES);
@@ -103,11 +103,11 @@ function AiScene() {
               <dl className="space-y-1.5 rounded-lg bg-surface p-3">
                 <div className="flex justify-between gap-4">
                   <dt className="text-xs font-medium text-fg-muted">Name</dt>
-                  <dd className="font-medium">Acme Corp</dd>
+                  <dd className="font-medium">Spear Corp</dd>
                 </div>
                 <div className="flex justify-between gap-4">
                   <dt className="text-xs font-medium text-fg-muted">Email</dt>
-                  <dd className="num font-medium">billing@acme.co</dd>
+                  <dd className="num font-medium">billing@spear.co</dd>
                 </div>
               </dl>
               <div className="flex gap-2">
@@ -127,7 +127,7 @@ function AiScene() {
                 className="mt-0.5 h-4 w-4 shrink-0 text-success"
                 aria-hidden
               />
-              <p>Client Acme Corp was added. You can invoice them now.</p>
+              <p>Client Spears Corp was added. You can invoice them now.</p>
             </div>
           )}
         </div>
@@ -168,7 +168,7 @@ function InvoiceScene() {
       <div className="flex h-full flex-col text-sm">
         <div className="grid grid-cols-3 gap-3">
           {[
-            ["Client", "Acme Corp"],
+            ["Client", "Spears Corp"],
             ["Invoice number", "INV-016"],
             ["Due date", "Dec 5, 2026"],
           ].map(([l, v]) => (
@@ -231,21 +231,21 @@ const TRACK_TIMES = [500, 1200, 1900, 3000];
 const TRACK_ROWS = [
   {
     n: "INV-014",
-    c: "Northwind Studio",
+    c: "Sally's Studio",
     a: 2400,
     tone: "danger",
     s: "Overdue by 5 days",
   },
   {
     n: "INV-017",
-    c: "Bluebird Co.",
+    c: "Plainfield Co.",
     a: 850,
     tone: "danger",
     s: "Overdue by 2 days",
   },
   {
     n: "INV-018",
-    c: "Acme Corp",
+    c: "Spears Corp",
     a: 1200,
     tone: "warning",
     s: "Due in 6 days",
@@ -327,21 +327,21 @@ function PaidScene() {
   const rows = [
     {
       n: "INV-014",
-      c: "Northwind Studio",
+      c: "Sally's Studio",
       a: "$2,400.00",
       tone: "danger",
       s: "Overdue",
     },
     {
       n: "INV-015",
-      c: "Bluebird Co.",
+      c: "Blade Co.",
       a: "$850.00",
       tone: paid ? "success" : "warning",
       s: paid ? "Paid" : "Pending",
     },
     {
       n: "INV-013",
-      c: "Acme Corp",
+      c: "Spear Corp",
       a: "$1,200.00",
       tone: "success",
       s: "Paid",
@@ -388,7 +388,7 @@ function PaidScene() {
             <div>
               <p className="text-xs font-semibold">Marked as paid</p>
               <p className="num text-xs text-fg-muted">
-                Bluebird Co. · $850.00
+                Plainfield Co. · $850.00
               </p>
             </div>
           </div>

@@ -267,7 +267,7 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
             label="Name"
             value={data.clientName || ""}
             onChange={(e) => data.setClientName(e.target.value)}
-            placeholder="Acme Corporation"
+            placeholder="Spears Corporation"
             autoComplete="organization"
             required
           />
@@ -276,7 +276,7 @@ export function ClientsView({ data, handleClientSubmitInternal }) {
             type="email"
             value={data.clientEmail || ""}
             onChange={(e) => data.setClientEmail(e.target.value)}
-            placeholder="billing@acme.co"
+            placeholder="billing@spears.co"
             autoComplete="email"
             required
           />

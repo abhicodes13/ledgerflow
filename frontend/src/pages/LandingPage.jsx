@@ -75,7 +75,7 @@ const FEATURES = [
   {
     icon: Sparkles,
     title: "An assistant that does the typing",
-    text: "Say “invoice Acme for 2 hours at $150”. It prepares the invoice, and nothing happens until you confirm.",
+    text: "Say “invoice Spears for 2 hours at $150”. It prepares the invoice, and nothing happens until you confirm.",
     status: "live",
   },
   {

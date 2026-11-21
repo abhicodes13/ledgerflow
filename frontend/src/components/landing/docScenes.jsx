@@ -53,7 +53,7 @@ function EstimateBuildScene() {
     <Frame title="New estimate">
       <div className="flex h-full flex-col text-sm">
         <div className="grid grid-cols-3 gap-3">
-          <Field label="Client">Northwind Studio</Field>
+          <Field label="Client">Sally's Studio</Field>
           <Field label="Estimate number">EST-0015</Field>
           <Field label="Valid until">Dec 20, 2026</Field>
         </div>
@@ -116,7 +116,7 @@ function EstimateApproveScene() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs text-fg-muted">Estimate EST-0015</p>
-            <p className="font-semibold">Prepared for Northwind Studio</p>
+            <p className="font-semibold">Prepared for Sally's Studio</p>
           </div>
           <p className="text-xs text-fg-muted">Valid until Dec 20</p>
         </div>
@@ -183,10 +183,16 @@ function EstimateConvertScene() {
   const converted = step >= 3;
 
   const rows = [
-    { n: "EST-0013", c: "Acme Corp", a: "$950", tone: "warning", s: "Viewed" },
+    {
+      n: "EST-0013",
+      c: "Roofing Corp",
+      a: "$950",
+      tone: "warning",
+      s: "Viewed",
+    },
     {
       n: "EST-0014",
-      c: "Bluebird Co.",
+      c: "Sally Home's Co.",
       a: "$1,800",
       tone: "accent",
       s: "Sent",
@@ -200,7 +206,7 @@ function EstimateConvertScene() {
           <li className="flex items-center justify-between gap-3 bg-accent-soft/40 px-4 py-2.5">
             <div className="min-w-0">
               <p className="num font-medium">EST-0015</p>
-              <p className="truncate text-xs text-fg-muted">Northwind Studio</p>
+              <p className="truncate text-xs text-fg-muted">Sally's Studio</p>
             </div>
             <div className="flex items-center gap-3">
               {!converted && (
@@ -253,7 +259,7 @@ function EstimateConvertScene() {
           </p>
           <div className="mt-1.5 flex items-center justify-between">
             <span className="num text-sm font-medium">
-              INV-0021 · Northwind Studio
+              INV-0021 · Sally's Studio
             </span>
             <span className="num font-semibold">$3,450</span>
           </div>
@@ -298,7 +304,7 @@ const S1_TEMPLATES = [
 
 function SignatureRequestScene() {
   const step = useSequence(S1_TIMES);
-  const email = "priya@northwind.example";
+  const email = "priya@sally.example";
   const typed = useTyping(email, { speed: 40, enabled: step >= 2 });
 
   return (
@@ -331,7 +337,7 @@ function SignatureRequestScene() {
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-3">
-          <Field label="Client">Northwind Studio</Field>
+          <Field label="Client">Sally's Studio</Field>
           <Field label="Send to">
             {typed || <span className="text-fg-subtle">name@company.com</span>}
           </Field>
@@ -429,7 +435,7 @@ function SignatureSignScene() {
 
 const S3_TIMES = [600, 1500, 2400, 3300];
 const S3_EVENTS = [
-  { l: "Sent to priya@northwind.example", t: "Dec 1, 9:14 AM" },
+  { l: "Sent to priya@sally.example", t: "Dec 1, 9:14 AM" },
   { l: "Opened by client", t: "Dec 1, 9:31 AM" },
   { l: "Signed by Priya Nair", t: "Dec 1, 9:33 AM" },
 ];
@@ -444,9 +450,7 @@ function SignatureRecordScene() {
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <p className="font-semibold">Work authorization</p>
-            <p className="text-xs text-fg-muted">
-              Northwind Studio · $3,450.00
-            </p>
+            <p className="text-xs text-fg-muted">Sally's Studio · $3,450.00</p>
           </div>
           <Badge
             key={done ? "signed" : "waiting"}

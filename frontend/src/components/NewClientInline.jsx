@@ -89,7 +89,7 @@ export function NewClientInline({
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={onEnter}
-          placeholder="Acme Corporation"
+          placeholder="Photogenic Corporation"
           autoComplete="organization"
           autoFocus
         />
@@ -99,7 +99,7 @@ export function NewClientInline({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           onKeyDown={onEnter}
-          placeholder="billing@acme.co"
+          placeholder="billing@photogenic.co"
           autoComplete="email"
         />
         <Input

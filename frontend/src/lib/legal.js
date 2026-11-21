@@ -2,7 +2,7 @@
 // Edit these, then have a lawyer review the pages before you charge customers.
 export const LEGAL = {
   company: "LedgerFlow",
-  contactEmail: "noreply@invoicesandmoney.com",
+  contactEmail: "support@invoicesandmoney.com",
   jurisdiction: "New Jersey",
   effectiveDate: "2026-11-20",
   refundPolicy:

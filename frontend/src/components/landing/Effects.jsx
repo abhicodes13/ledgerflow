@@ -105,21 +105,21 @@ export function AnimatedPreview() {
   const rows = [
     {
       n: "INV-014",
-      c: "Northwind Studio",
+      c: "Paradus Studio",
       a: "$2,400.00",
       tone: "danger",
       s: "Overdue",
     },
     {
       n: "INV-015",
-      c: "Bluebird Co.",
+      c: "Blade Co.",
       a: "$850.00",
       tone: paid ? "success" : "warning",
       s: paid ? "Paid" : "Pending",
     },
     {
       n: "INV-013",
-      c: "Acme Corp",
+      c: "Solo Foundation",
       a: "$1,200.00",
       tone: "success",
       s: "Paid",
@@ -149,7 +149,9 @@ export function AnimatedPreview() {
           <CheckCircle2 className="h-4 w-4 text-success" />
           <div>
             <p className="text-xs font-semibold text-fg">Payment received</p>
-            <p className="num text-xs text-fg-muted">Bluebird Co. · $850.00</p>
+            <p className="num text-xs text-fg-muted">
+              Plainfield Co. · $850.00
+            </p>
           </div>
         </div>
 

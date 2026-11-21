@@ -5,12 +5,15 @@ export const PLAN = {
   monthly: 19,
   yearly: 200,
   features: [
-    "Unlimited invoices and clients",
-    "Itemized invoices with automatic totals",
+    "Unlimited clients and invoices",
+    "Itemized invoices with PDF download",
     "Paid, pending, and overdue tracking",
-    "Dashboard with cash-flow overview",
-    "AI assistant with approval before every action",
-    "Light and dark themes",
+    "Payment reminders you review before they send",
+    "AI assistant that asks before it acts (monthly usage included)",
+    "Cash flow, aging, and top-client insights",
+    "Export invoices and clients to CSV",
+    "Online payment links with Stripe (rolling out)",
+    "Light and dark themes, installable on your phone",
   ],
 };
 

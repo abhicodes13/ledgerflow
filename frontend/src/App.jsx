@@ -41,6 +41,8 @@ import { tabToPath } from "./lib/routes";
 import { errorMessage, readError } from "./lib/api";
 import { API_ERROR_EVENT } from "./lib/apiGuard";
 import { usePaidAlerts } from "./hooks/usePaidAlerts";
+import { TermsPage } from "./pages/TermsPage";
+import { PrivacyPage } from "./pages/PrivacyPage";
 
 function App() {
   const data = useLedgerFlowData();
@@ -426,6 +428,14 @@ function App() {
       <Route
         path="/pay/result"
         element={<PayResultPage theme={theme} setTheme={setTheme} />}
+      />
+      <Route
+        path="/terms"
+        element={<TermsPage theme={theme} setTheme={setTheme} />}
+      />
+      <Route
+        path="/privacy"
+        element={<PrivacyPage theme={theme} setTheme={setTheme} />}
       />
 
       {/* Stripe returns here after Connect onboarding */}

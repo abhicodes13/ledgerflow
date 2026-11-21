@@ -1,29 +1,35 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-
 import {
   ArrowRight,
+  BarChart3,
   Bell,
   Check,
   ChevronDown,
   Clock,
+  CreditCard,
   FileSpreadsheet,
   FileText,
   LayoutDashboard,
+  Mail,
   ShieldCheck,
+  Smartphone,
   Sparkles,
   Users,
   Wallet,
 } from "lucide-react";
 import { Logo } from "../components/layout/Logo";
 import { ThemeToggle } from "../components/layout/ThemeToggle";
+import { SiteFooter } from "../components/layout/SiteFooter";
 import { Badge } from "../components/ui";
 import { Aurora, Reveal } from "../components/landing/Effects";
 import { Showcase } from "../components/landing/Showcase";
-import { cn } from "../lib/cn";
+import { Slideshow } from "../components/landing/tourKit";
+import { ESTIMATE_SLIDES } from "../components/landing/docScenes";
+import { Screens } from "../components/landing/Screens";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { PLAN, perMonthYearly, savings, savingsPct } from "../lib/plan";
-
-/* ───────── Edit your plan here ───────── */
+import { cn } from "../lib/cn";
 
 const PAIN_POINTS = [
   {
@@ -48,26 +54,59 @@ const PAIN_POINTS = [
   },
 ];
 
-const SOLUTIONS = [
+const STATUS = {
+  live: { tone: "success", label: "Live" },
+  rolling: { tone: "accent", label: "Rolling out" },
+};
+
+const FEATURES = [
   {
     icon: LayoutDashboard,
-    title: "See what needs attention, instantly",
-    text: "Your dashboard lists unpaid invoices by urgency, with overdue ones flagged and counted, so you always know who to follow up with.",
+    title: "See what needs attention",
+    text: "Unpaid invoices are listed by urgency. Copy a payment link, send a reminder, or mark paid in one click.",
+    status: "live",
   },
   {
     icon: FileText,
     title: "Invoices in under a minute",
-    text: "Add line items, watch the total update live, and let LedgerFlow number the invoice for you. Download it as a PDF when you're done.",
-  },
-  {
-    icon: Users,
-    title: "Every client in one place",
-    text: "See how much each client has been billed and what they still owe, next to their full invoice history.",
+    text: "Line items, live totals, automatic numbering, and due dates like Net 30. Download any invoice as a PDF.",
+    status: "live",
   },
   {
     icon: Sparkles,
     title: "An assistant that does the typing",
-    text: 'Say "add a client named Acme" or "draft an invoice for $2,000". It prepares the action, and nothing happens until you confirm.',
+    text: "Say “invoice Acme for 2 hours at $150”. It prepares the invoice, and nothing happens until you confirm.",
+    status: "live",
+  },
+  {
+    icon: Mail,
+    title: "Reminders you review first",
+    text: "See exactly who will be emailed, then confirm. Clients reminded recently are skipped automatically.",
+    status: "live",
+  },
+  {
+    icon: CreditCard,
+    title: "Get paid by card",
+    text: "Share a payment link. Your client pays through Stripe, and the invoice marks itself paid.",
+    status: "rolling",
+  },
+  {
+    icon: BarChart3,
+    title: "Know where you stand",
+    text: "Cash flow by month, what's owed by how late it is, and your top clients, all on your dashboard.",
+    status: "live",
+  },
+  {
+    icon: Users,
+    title: "Every client in one place",
+    text: "See what each client has been billed and still owes, with search and CSV export.",
+    status: "live",
+  },
+  {
+    icon: Smartphone,
+    title: "Works on every screen",
+    text: "Light and dark themes, a phone layout, and install it like an app. Jump anywhere with Cmd+K.",
+    status: "live",
   },
 ];
 
@@ -78,13 +117,15 @@ const STEPS = [
   },
   {
     title: "Create an invoice",
-    text: "Add line items and a due date. Totals are calculated for you.",
+    text: "Add line items and a due date, or just ask the assistant.",
   },
   {
     title: "Track and collect",
-    text: "Watch paid, pending, and overdue update, then mark invoices paid.",
+    text: "Watch paid, pending, and overdue update. Send reminders, share a payment link, or mark invoices paid.",
   },
 ];
+
+const linkClass = "font-medium text-accent hover:underline";
 
 const FAQ = [
   {
@@ -93,7 +134,7 @@ const FAQ = [
   },
   {
     q: "What can the AI assistant do?",
-    a: "It can add clients, draft invoices, and mark invoices as paid from a plain-English request. Each time, it shows you a summary first.",
+    a: "It can add clients, create invoices (including a repeat of a client's last one), mark invoices as paid, send overdue reminders, and summarize your numbers. Each time, it shows you a summary first.",
   },
   {
     q: "Will the AI change my data without asking?",
@@ -104,24 +145,46 @@ const FAQ = [
     a: "That's why the confirmation step exists. You see exactly what it's about to do, such as the client name or invoice items, before it happens.",
   },
   {
-    q: "Is my data private?",
-    a: "Yes. You sign in to your own account, and each account can only see its own clients and invoices.",
+    q: "How do reminders work?",
+    a: "Choose your overdue invoices, review who will be emailed, and confirm. Clients who were reminded recently, or who have no email on file, are skipped, so nobody gets spammed.",
+  },
+  {
+    q: "How do online payments work?",
+    a: "Connect a Stripe account in Settings (it takes about 5 minutes), then copy a payment link from any unpaid invoice. Your client pays by card on a Stripe page, and the invoice marks itself paid. Online payments are rolling out now, and Stripe's processing fees apply.",
+  },
+  {
+    q: "Can I email the invoice itself?",
+    a: "Not yet. Today you can download a PDF or copy a payment link to send yourself, and send reminders from LedgerFlow. Emailing invoices directly is coming.",
+  },
+  {
+    q: "Is my data private and secure?",
+    a: (
+      <>
+        Each account can only see its own clients and invoices. Passwords are
+        stored securely, and card details are handled by Stripe, so they never
+        touch our servers. See our{" "}
+        <Link to="/privacy" className={linkClass}>
+          Privacy Policy
+        </Link>{" "}
+        for the details.
+      </>
+    ),
+  },
+  {
+    q: "Can I export my data?",
+    a: "Yes. Export your invoices and your clients to CSV from their pages whenever you like.",
   },
   {
     q: "Does it work on my phone?",
-    a: "Yes. LedgerFlow adapts to phones, tablets, and laptops, and has light and dark themes.",
+    a: "Yes. LedgerFlow adapts to phones, tablets, and laptops, and you can install it on your home screen like an app.",
   },
   {
-    q: "Can I email invoices or accept card payments?",
-    a: "Not yet. Emailing invoices and online card payments are coming. Today you create invoices, download them as PDFs, track their status, and mark them paid inside LedgerFlow.",
-  },
-  {
-    q: "Can I switch between monthly and yearly billing?",
-    a: "Yes. The yearly plan costs less per month, and you can change plans at any time.",
+    q: "What are Estimates and Signatures?",
+    a: "A preview of what's next: send an estimate, let your client approve it online, and turn it into an invoice. You can try both inside the app with sample data. They aren't live yet.",
   },
   {
     q: "Can I cancel anytime?",
-    a: "Yes. There's no long-term contract on the monthly plan.",
+    a: "Yes. There's no long-term contract. Manage or cancel your plan from Settings, under Plan and billing.",
   },
 ];
 
@@ -235,6 +298,13 @@ function Pricing({ cta, isAuthed, billing }) {
             <ArrowRight className="h-4 w-4" aria-hidden />
           </button>
         )}
+        <p className="mt-3 text-center text-xs text-fg-subtle">
+          Secure checkout by Stripe. By subscribing you agree to our{" "}
+          <Link to="/terms" className="underline hover:text-fg">
+            Terms
+          </Link>
+          .
+        </p>
 
         <ul className="mt-8 space-y-3">
           {PLAN.features.map((f) => (
@@ -253,11 +323,21 @@ function Pricing({ cta, isAuthed, billing }) {
 }
 
 export function LandingPage({ isAuthed, theme, setTheme, billing }) {
+  const cta = isAuthed ? "/app" : "/login";
+  useDocumentTitle("LedgerFlow: get paid faster, with less paperwork");
+
+  // Links like /#pricing from other pages scroll to their section
   const { hash } = useLocation();
   useEffect(() => {
-    if (hash) document.querySelector(hash)?.scrollIntoView();
+    if (!hash) return;
+    try {
+      document
+        .getElementById(decodeURIComponent(hash.slice(1)))
+        ?.scrollIntoView();
+    } catch {
+      /* ignore malformed hashes */
+    }
   }, [hash]);
-  const cta = isAuthed ? "/app" : "/login";
 
   return (
     <div className="relative isolate min-h-dvh bg-bg text-fg">
@@ -307,8 +387,9 @@ export function LandingPage({ isAuthed, theme, setTheme, billing }) {
             paperwork.
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-lg text-fg-muted">
-            Create invoices, see exactly who owes what, and let an AI assistant
-            handle the typing. Nothing changes until you confirm.
+            Create invoices, send reminders, and see exactly who owes what, with
+            an AI assistant that does the typing. Nothing changes until you
+            confirm.
           </p>
           <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link to={cta} className={btnPrimary}>
@@ -352,31 +433,40 @@ export function LandingPage({ isAuthed, theme, setTheme, billing }) {
           </div>
         </section>
 
-        {/* Solutions */}
+        {/* Features */}
         <section id="features" className="scroll-mt-20 px-4 py-20 sm:px-6">
           <SectionHeading
-            eyebrow="The solution"
+            eyebrow="Everything in one place"
             title="One calm place for your invoices"
-            text="LedgerFlow replaces the spreadsheets and the guesswork."
+            text="From the first invoice to the last payment, without the spreadsheets and the guesswork."
           />
-          <div className="mx-auto mt-12 grid max-w-6xl gap-5 md:grid-cols-2">
-            {SOLUTIONS.map(({ icon: Icon, title, text }, i) => (
+          <div className="mx-auto mt-12 grid max-w-6xl gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {FEATURES.map(({ icon: Icon, title, text, status }, i) => (
               <Reveal
                 key={title}
-                delay={i * 90}
-                className="flex gap-4 rounded-xl border border-border bg-surface/80 p-6 backdrop-blur-sm"
+                delay={(i % 4) * 90}
+                className="flex flex-col rounded-xl border border-border bg-surface/80 p-6 backdrop-blur-sm"
               >
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
-                  <Icon className="h-5 w-5" aria-hidden />
-                </span>
-                <div>
-                  <h3 className="font-semibold">{title}</h3>
-                  <p className="mt-1.5 text-sm text-fg-muted">{text}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-lg bg-accent-soft text-accent">
+                    <Icon className="h-5 w-5" aria-hidden />
+                  </span>
+                  <Badge tone={STATUS[status].tone}>
+                    {STATUS[status].label}
+                  </Badge>
                 </div>
+                <h3 className="mt-4 font-semibold">{title}</h3>
+                <p className="mt-1.5 text-sm text-fg-muted">{text}</p>
               </Reveal>
             ))}
           </div>
+          <p className="mx-auto mt-6 max-w-2xl text-center text-xs text-fg-subtle">
+            Rolling out means we're finishing it now.
+          </p>
         </section>
+
+        {/* Real screenshots (only appear once the image files exist) */}
+        <Screens />
 
         {/* How it works */}
         <section className="border-y border-border bg-surface/60 px-4 py-20 backdrop-blur-sm sm:px-6">
@@ -401,6 +491,23 @@ export function LandingPage({ isAuthed, theme, setTheme, billing }) {
           </ol>
         </section>
 
+        {/* Estimates preview */}
+        <section className="px-4 py-20 sm:px-6">
+          <SectionHeading
+            eyebrow="Coming soon"
+            title="Quote the work. Get it approved. Invoice it."
+            text="Send an estimate, let your client approve it online, then turn it into an invoice in one click. Signatures work the same way. Both are in preview today, and you can try them with sample data inside the app."
+          />
+          <div className="mx-auto mt-12 max-w-4xl">
+            <Reveal>
+              <Slideshow label="Estimates tour" slides={ESTIMATE_SLIDES} />
+            </Reveal>
+            <p className="mt-6 text-center text-xs text-fg-subtle">
+              Sample data for illustration.
+            </p>
+          </div>
+        </section>
+
         <Pricing cta={cta} isAuthed={isAuthed} billing={billing} />
 
         {/* FAQ */}
@@ -408,7 +515,7 @@ export function LandingPage({ isAuthed, theme, setTheme, billing }) {
           <SectionHeading
             eyebrow="FAQ"
             title="Questions, answered"
-            text="Can't find what you're looking for? You'll be able to reach support from inside the app."
+            text="Can't find what you're looking for? You can email us any time."
           />
           <div className="mx-auto mt-10 max-w-2xl divide-y divide-border rounded-xl border border-border bg-surface">
             {FAQ.map((f) => (
@@ -450,14 +557,7 @@ export function LandingPage({ isAuthed, theme, setTheme, billing }) {
         </section>
       </main>
 
-      <footer className="border-t border-border px-4 py-8 sm:px-6">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 sm:flex-row">
-          <Logo />
-          <p className="text-sm text-fg-subtle">
-            © {new Date().getFullYear()} LedgerFlow. All rights reserved.
-          </p>
-        </div>
-      </footer>
+      <SiteFooter isAuthed={isAuthed} />
     </div>
   );
 }

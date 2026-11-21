@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Button, Input } from "../ui";
 import { AuthLayout, FormMessage } from "./AuthLayout";
+
+const linkClass = "font-medium text-accent hover:underline";
 
 export function AuthScreen({
   isRegistering,
@@ -17,6 +20,12 @@ export function AuthScreen({
   theme,
   setTheme,
 }) {
+  const [agreed, setAgreed] = useState(false);
+  const toggle = () => {
+    setAgreed(false);
+    onToggleMode();
+  };
+
   return (
     <AuthLayout theme={theme} setTheme={setTheme}>
       <div className="space-y-1.5">
@@ -72,6 +81,39 @@ export function AuthScreen({
           </div>
         )}
 
+        {isRegistering && (
+          <label className="flex cursor-pointer items-start gap-2.5 text-sm text-fg-muted">
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              required
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-border-strong accent-accent"
+            />
+            <span>
+              I agree to the{" "}
+              <Link
+                to="/terms"
+                target="_blank"
+                rel="noreferrer"
+                className={linkClass}
+              >
+                Terms of Service
+              </Link>{" "}
+              and{" "}
+              <Link
+                to="/privacy"
+                target="_blank"
+                rel="noreferrer"
+                className={linkClass}
+              >
+                Privacy Policy
+              </Link>
+              .
+            </span>
+          </label>
+        )}
+
         {message.text && (
           <FormMessage tone={message.isError ? "error" : "success"}>
             {message.text}
@@ -85,11 +127,7 @@ export function AuthScreen({
 
       <p className="text-center text-sm text-fg-muted">
         {isRegistering ? "Already have an account?" : "New to LedgerFlow?"}{" "}
-        <button
-          type="button"
-          onClick={onToggleMode}
-          className="font-medium text-accent hover:underline"
-        >
+        <button type="button" onClick={toggle} className={linkClass}>
           {isRegistering ? "Sign in" : "Create an account"}
         </button>
       </p>

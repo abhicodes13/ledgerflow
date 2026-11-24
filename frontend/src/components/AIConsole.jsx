@@ -14,6 +14,7 @@ import {
   Sparkles,
   UserPlus,
   XCircle,
+  MessageSquarePlus,
 } from "lucide-react";
 import { cn } from "../lib/cn";
 import { Button } from "./ui";
@@ -48,7 +49,14 @@ const SUGGESTIONS = [
   {
     icon: CheckCircle2,
     label: "Mark paid",
+
     text: "Mark invoice as paid: ",
+    send: false,
+  },
+  {
+    icon: Send,
+    label: "Email an invoice",
+    text: "Email invoice ",
     send: false,
   },
   {
@@ -262,6 +270,7 @@ export function AIConsole({
   onConfirm,
   onCancel,
   onClose,
+  onReset,
 }) {
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
@@ -292,15 +301,27 @@ export function AIConsole({
             <p className="text-xs text-fg-subtle">Ask in plain English</p>
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="min-h-11 min-w-11"
-          aria-label="Close assistant"
-          onClick={onClose}
-        >
-          <PanelRightClose className="h-4 w-4" aria-hidden />
-        </Button>
+        <div className="flex items-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="min-h-11 min-w-11"
+            aria-label="New chat"
+            title="New chat"
+            onClick={onReset}
+          >
+            <MessageSquarePlus className="h-4 w-4" aria-hidden />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="min-h-11 min-w-11"
+            aria-label="Close assistant"
+            onClick={onClose}
+          >
+            <PanelRightClose className="h-4 w-4" aria-hidden />
+          </Button>
+        </div>
       </div>
 
       {/* Conversation */}

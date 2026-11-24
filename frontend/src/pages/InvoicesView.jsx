@@ -10,6 +10,7 @@ import {
   Mail,
   Plus,
   Trash2,
+  Send,
 } from "lucide-react";
 import {
   Badge,
@@ -27,6 +28,7 @@ import {
 } from "../components/ui";
 import { RemindedNote } from "../components/ReminderModal";
 import { NewClientInline } from "../components/NewClientInline";
+import { SendInvoiceModal } from "../components/SendInvoiceModal";
 import {
   dateInDays,
   daysUntilDue,
@@ -78,6 +80,7 @@ export function InvoicesView({
   const [selected, setSelected] = useState(null);
   const [settling, setSettling] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [emailing, setEmailing] = useState(null); // the invoice being emailed
   // Line items for the open invoice. Loading = detail.id !== selected.id
   const [detail, setDetail] = useState({ id: null, items: [] });
 
@@ -653,6 +656,15 @@ export function InvoicesView({
                 <Download className="h-4 w-4" aria-hidden />
                 Download PDF
               </Button>
+              {selected.status !== "paid" && selected.status !== "void" && (
+                <Button
+                  variant="secondary"
+                  onClick={() => setEmailing(selected)}
+                >
+                  <Send className="h-4 w-4" aria-hidden />
+                  Email invoice
+                </Button>
+              )}
               {payLink.url && (
                 <Button variant="secondary" onClick={copyPaymentLink}>
                   <Copy className="h-4 w-4" aria-hidden />
@@ -806,6 +818,15 @@ export function InvoicesView({
           </div>
         )}
       </Modal>
+      {emailing && (
+        <SendInvoiceModal
+          invoice={emailing}
+          email={invoiceClientEmail(emailing, data.clientsList)}
+          apiBase={data.API_BASE}
+          token={data.token}
+          onClose={() => setEmailing(null)}
+        />
+      )}
     </>
   );
 }

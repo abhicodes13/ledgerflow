@@ -349,6 +349,7 @@ function App() {
           onSend={assistant.send}
           onConfirm={assistant.confirm}
           onCancel={assistant.cancel}
+          onReset={assistant.reset}
           onClose={() => {
             setIsConsoleVisible(false);
             setIsMobileChatOpen(false);

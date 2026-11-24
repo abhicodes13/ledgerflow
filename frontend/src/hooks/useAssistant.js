@@ -127,6 +127,7 @@ export function useAssistant({ apiBase, token, onChanged }) {
   const tokenRef = useRef(token);
   const sending = useRef(false);
   const inFlight = useRef(new Set()); // card ids being confirmed right now
+  const epochRef = useRef(0); // bumped by "New chat", so late answers from the old chat are ignored
 
   // A different account must never see the previous conversation
   if (owner !== token) {
@@ -199,6 +200,7 @@ export function useAssistant({ apiBase, token, onChanged }) {
 
       sending.current = true;
       const sentWith = token;
+      const epoch = epochRef.current;
 
       // History is what came BEFORE this message
       let past = messagesRef.current.filter((m) => m.type !== "error");
@@ -226,6 +228,7 @@ export function useAssistant({ apiBase, token, onChanged }) {
       if (history.length) body.history = history;
 
       const r = await request(apiBase, token, "/api/chat", body);
+      if (epochRef.current !== epoch) return; // the chat was reset while this was on its way
       sending.current = false;
       if (tokenRef.current !== sentWith) return; // signed out meanwhile
       setLoading(false);
@@ -331,6 +334,26 @@ export function useAssistant({ apiBase, token, onChanged }) {
     },
     [patch],
   );
+  // "New chat": clear the screen and the server's short-term memory of this conversation
+  const reset = useCallback(async () => {
+    epochRef.current += 1; // answers still on their way belong to the old chat
+    sending.current = false;
+    inFlight.current.clear();
+    setMessages([welcome()]);
+    setInput("");
+    setLoading(false);
 
-  return { messages, input, setInput, loading, send, confirm, cancel };
+    const sentWith = token;
+    const r = await request(apiBase, token, "/api/chat/reset", {});
+    if (tokenRef.current !== sentWith) return;
+    if (r.failure || !r.ok) {
+      add({
+        type: "error",
+        text: "I started a new chat, but couldn't clear what the assistant remembers. It may still recall earlier messages.",
+        retryText: null,
+      });
+    }
+  }, [apiBase, token, add]);
+
+  return { messages, input, setInput, loading, send, confirm, cancel, reset };
 }

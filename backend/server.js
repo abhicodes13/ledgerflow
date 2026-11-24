@@ -2,39 +2,26 @@
 // LEDGERFLOW API SERVER
 // =========================================================================
 require("dotenv").config(); // must stay first so .env is loaded before other files read it
-const required = [
-  "STRIPE_SECRET_KEY",
-  "STRIPE_WEBHOOK_SECRET",
-  "JWT_SECRET",
-  "RESEND_API_KEY",
-];
-// The frontend URL is only mandatory in production (locally it falls back to localhost)
-if (process.env.NODE_ENV === "production") {
-  required.push("FRONTEND_PRODUCTION_URL");
-}
-for (const k of required)
-  if (!process.env[k]) throw new Error(`Missing env var: ${k}`);
+
 const express = require("express");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
-const helmet = require("helmet");
+
 const pool = require("./db");
 const clientService = require("./clientService");
 const invoiceService = require("./invoiceService");
 const analyticsRepository = require("./analyticsRepository");
 const reminderService = require("./reminderService");
 const agent = require("./agent");
+const correctionService = require("./correctionService");
+const invoiceEmailService = require("./invoiceEmailService");
 const authService = require("./authService");
 const authenticateToken = require("./authMiddleware");
 const checkSubscription = require("./subscriptionMiddleware"); // paywall: use AFTER authenticateToken
 const paymentRouter = require("./payment");
-const connectRouter = require("./connect");
-const payRouter = require("./pay");
-const paymentLinks = require("./paymentLinks");
-const connectWebhookRouter = require("./connectWebhook");
 const { AppError } = require("./errors");
 const { generateInvoicePdfStream } = require("./utils/invoiceGenerator");
-const { sendResetEmail } = require("./resetEmail");
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -68,21 +55,12 @@ function sendError(res, error, label) {
 // =========================================================================
 // MIDDLEWARE (order matters)
 // =========================================================================
-// Origins are trimmed and trailing slashes removed, so a stray "/" in an env
-// variable can't silently break CORS. Add more with CORS_EXTRA_ORIGINS
-// (comma separated), for example the www version of your domain.
 const allowedOrigins = [
-  process.env.FRONTEND_PRODUCTION_URL,
-  ...(process.env.CORS_EXTRA_ORIGINS || "").split(","),
-  ...(process.env.NODE_ENV !== "production"
-    ? ["http://localhost:5173", "http://localhost:3000"]
-    : []),
-]
-  .map((s) => (s || "").trim().replace(/\/+$/, ""))
-  .filter(Boolean);
+  "http://localhost:5173",
+  "http://localhost:3000",
+  process.env.FRONTEND_PRODUCTION_URL, // cloud-deployed frontend URL
+].filter(Boolean);
 
-app.set("trust proxy", 1);
-app.use(helmet());
 // CORS first, so even rate-limit rejections carry CORS headers
 app.use(
   cors({
@@ -91,9 +69,7 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        // The browser blocks the request; the server just logs it (no 500)
-        console.warn("CORS blocked origin:", origin);
-        callback(null, false);
+        callback(new Error("CORS policy violation"));
       }
     },
     credentials: true,
@@ -106,18 +82,11 @@ app.use(
 app.use("/api/auth", rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }));
 // Limit AI requests per IP, since every call costs money
 app.use("/api/chat", rateLimit({ windowMs: 15 * 60 * 1000, max: 60 }));
+// If you put this behind a load balancer (ALB), also add: app.set("trust proxy", 1);
 
 // Mounted BEFORE express.json() on purpose: Stripe webhooks need the raw body.
 app.use("/api/payment", paymentRouter);
-// Payments made to our users' connected accounts (also needs the raw body)
-app.use("/api/payment/connect-webhook", connectWebhookRouter);
 app.use(express.json({ limit: "100kb" }));
-
-// Stripe Connect: users connect their own Stripe account to get paid directly
-app.use("/api/connect", authenticateToken, checkSubscription, connectRouter);
-
-// Public pay links from invoice PDFs and emails: /pay/<token> -> Stripe Checkout
-app.use("/pay", payRouter);
 
 // =========================================================================
 // HEALTH
@@ -172,48 +141,6 @@ app.post("/api/auth/login", async (req, res) => {
     return res
       .status(500)
       .json({ success: false, error: "Something went wrong" });
-  }
-});
-
-app.post(
-  "/api/auth/forgot-password",
-  rateLimit({ windowMs: 60 * 60 * 1000, max: 5 }),
-  async (req, res) => {
-    try {
-      const reset = await authService.createPasswordReset(req.body?.email);
-      if (reset) {
-        // Not awaited, so response time doesn't reveal whether the account exists
-        sendResetEmail({
-          to: reset.email,
-          username: reset.username,
-          token: reset.token,
-        }).catch((e) => console.error("Reset email failed:", e.message));
-      }
-    } catch (e) {
-      console.error("forgot-password failed:", e);
-    }
-    return res.json({
-      success: true,
-      message: "If an account exists for that email, we've sent a reset link.",
-    });
-  },
-);
-
-app.post("/api/auth/reset-password", async (req, res) => {
-  try {
-    await authService.resetPassword(req.body?.token, req.body?.newPassword);
-    return res.json({
-      success: true,
-      message: "Password updated. You can log in now.",
-    });
-  } catch (e) {
-    if (e instanceof authService.AuthError) {
-      return res.status(e.status).json({ success: false, error: e.message });
-    }
-    console.error("reset-password failed:", e);
-    return res
-      .status(500)
-      .json({ success: false, error: "Could not reset password." });
   }
 });
 
@@ -352,48 +279,6 @@ app.patch(
   },
 );
 
-// Line items for one invoice (for the invoice detail view).
-// -> { success, items: [{ id, description, quantity, unit_amount_cents,
-//      line_total_cents }], total_cents }
-app.get(
-  "/api/invoices/:id/items",
-  authenticateToken,
-  checkSubscription,
-  async (req, res) => {
-    try {
-      const userId = getUserId(req);
-      const invoiceId = Number(req.params.id);
-      if (!Number.isInteger(invoiceId) || invoiceId < 1) {
-        throw new AppError("Invalid invoice id", 400);
-      }
-
-      // Only the owner can read an invoice's items
-      const owned = await pool.query(
-        "SELECT id FROM invoices WHERE id = $1 AND user_id = $2",
-        [invoiceId, userId],
-      );
-      if (!owned.rows[0]) throw new AppError("Invoice not found", 404);
-
-      const result = await pool.query(
-        `SELECT id, description, quantity, unit_amount_cents
-         FROM invoice_items WHERE invoice_id = $1 ORDER BY id`,
-        [invoiceId],
-      );
-      const items = result.rows.map((r) => ({
-        id: r.id,
-        description: r.description,
-        quantity: Number(r.quantity),
-        unit_amount_cents: Number(r.unit_amount_cents),
-        line_total_cents: Number(r.quantity) * Number(r.unit_amount_cents),
-      }));
-      const total = items.reduce((sum, i) => sum + i.line_total_cents, 0);
-      return res.json({ success: true, items, total_cents: total });
-    } catch (error) {
-      return sendError(res, error, "invoice items failed");
-    }
-  },
-);
-
 // =========================================================================
 // ANALYTICS
 // =========================================================================
@@ -412,60 +297,6 @@ app.get(
       });
     } catch (error) {
       return sendError(res, error, "analytics failed");
-    }
-  },
-);
-
-// Unpaid invoices grouped by age (not yet due, 1-30, 31-60, 61-90, 90+ days)
-app.get(
-  "/api/analytics/aging",
-  authenticateToken,
-  checkSubscription,
-  async (req, res) => {
-    try {
-      const data = await analyticsRepository.getAgingReport(getUserId(req));
-      return res.json({ success: true, data });
-    } catch (error) {
-      return sendError(res, error, "aging report failed");
-    }
-  },
-);
-
-// Per-client balances and payment habits.
-// Optional: ?sort=outstanding|overdue|paid|invoices&limit=5&q=acme
-app.get(
-  "/api/analytics/clients",
-  authenticateToken,
-  checkSubscription,
-  async (req, res) => {
-    try {
-      const { sort, limit, q } = req.query;
-      const data = await analyticsRepository.getClientSummary(getUserId(req), {
-        sortBy: typeof sort === "string" ? sort : undefined,
-        limit,
-        clientName: typeof q === "string" ? q.slice(0, 100) : undefined,
-      });
-      return res.json({ success: true, data });
-    } catch (error) {
-      return sendError(res, error, "client summary failed");
-    }
-  },
-);
-
-// Invoiced and collected totals per month. Optional: ?months=6 (1 to 24)
-app.get(
-  "/api/analytics/revenue",
-  authenticateToken,
-  checkSubscription,
-  async (req, res) => {
-    try {
-      const data = await analyticsRepository.getRevenueByPeriod(
-        getUserId(req),
-        req.query.months,
-      );
-      return res.json({ success: true, data });
-    } catch (error) {
-      return sendError(res, error, "revenue report failed");
     }
   },
 );
@@ -506,35 +337,112 @@ app.get(
       );
       const owner = ownerResult.rows[0] || {};
 
-      // An online payment link, only for unpaid invoices of users who have
-      // connected Stripe. If it can't be made, the PDF is still produced.
-      let paymentUrl = null;
-      if (invoice.status === "pending") {
-        try {
-          const link = await paymentLinks.getInvoicePaymentLink(
-            userId,
-            invoiceId,
-          );
-          if (link.enabled) paymentUrl = link.url;
-        } catch (linkError) {
-          console.warn(
-            `No pay link for invoice ${invoiceId}:`,
-            linkError.message,
-          );
-        }
-      }
-
       // The generator sets the PDF headers and streams the file
-      generateInvoicePdfStream(
-        res,
-        invoice,
-        itemsResult.rows,
-        { name: owner.username, email: owner.email },
-        { paymentUrl },
-      );
+      generateInvoicePdfStream(res, invoice, itemsResult.rows, {
+        name: owner.username,
+        email: owner.email,
+      });
     } catch (error) {
       if (!res.headersSent) return sendError(res, error, "pdf failed");
       res.end();
+    }
+  },
+);
+
+// =========================================================================
+// CORRECTIONS AND EMAILING AN INVOICE (all scoped to the signed-in user)
+// =========================================================================
+app.patch(
+  "/api/invoices/:id/void",
+  authenticateToken,
+  checkSubscription,
+  async (req, res) => {
+    try {
+      const invoice = await correctionService.voidInvoice(
+        getUserId(req),
+        req.params.id,
+      );
+      return res.json({ message: "Invoice voided", invoice });
+    } catch (error) {
+      return sendError(res, error, "void invoice failed");
+    }
+  },
+);
+
+app.patch(
+  "/api/invoices/:id/due-date",
+  authenticateToken,
+  checkSubscription,
+  async (req, res) => {
+    try {
+      const invoice = await correctionService.changeDueDate(
+        getUserId(req),
+        req.params.id,
+        req.body.due_date,
+      );
+      return res.json({ message: "Due date updated", invoice });
+    } catch (error) {
+      return sendError(res, error, "change due date failed");
+    }
+  },
+);
+
+// Emails the invoice (PDF attached) to the client on file. The recipient is never
+// taken from the request.
+app.post(
+  "/api/invoices/:id/send",
+  authenticateToken,
+  checkSubscription,
+  async (req, res) => {
+    try {
+      const result = await invoiceEmailService.sendInvoiceEmail(
+        getUserId(req),
+        req.params.id,
+      );
+      return res.json({ success: true, ...result });
+    } catch (error) {
+      return sendError(res, error, "send invoice failed");
+    }
+  },
+);
+
+// Body may include any of: name, email, phone_number (send "" or null to clear the phone)
+app.patch(
+  "/api/clients/:id",
+  authenticateToken,
+  checkSubscription,
+  async (req, res) => {
+    try {
+      const { name, email, phone_number } = req.body;
+      const client = await correctionService.updateClient(
+        getUserId(req),
+        req.params.id,
+        {
+          name,
+          email,
+          phone_number,
+        },
+      );
+      return res.json({ message: "Client updated", client });
+    } catch (error) {
+      return sendError(res, error, "update client failed");
+    }
+  },
+);
+
+app.post(
+  "/api/clients/:id/archive",
+  authenticateToken,
+  checkSubscription,
+  async (req, res) => {
+    try {
+      const client = await correctionService.archiveClient(
+        getUserId(req),
+        req.params.id,
+      );
+      return res.json({ message: "Client archived", client });
+    } catch (error) {
+      return sendError(res, error, "archive client failed");
     }
   },
 );
@@ -643,13 +551,6 @@ app.post(
             "My language processor is experiencing heavy traffic right now. Please try again in a few moments!",
         });
       }
-      if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
-        return res.status(200).json({
-          type: "text",
-          message:
-            "The assistant is busy right now. Please try again in a minute.",
-        });
-      }
 
       console.error("AI chat failed:", error);
       return res
@@ -660,44 +561,20 @@ app.post(
 );
 
 // =========================================================================
-// AI AGENT: confirm (runs the approved action through the normal services)
-//
-// Proposals are saved in pending_actions by the agent. The browser sends back
-// only the id, and this route loads what was saved, so the payload can't be
-// changed on the way and an approval can only be used once.
+// AI AGENT: reset the assistant's short-term memory (for a "New chat" button)
 // =========================================================================
-const toId = (v) => {
-  const n = Number(v);
-  return Number.isInteger(n) && n > 0 ? n : null;
-};
-
-// Atomically claims a pending proposal: it must belong to this user, match the
-// action, still be pending, and not be expired. Returns the saved payload or null.
-async function claimPending(userId, actionType, id) {
-  const pid = toId(id);
-  if (!pid) return null;
-  const { rows } = await pool.query(
-    `UPDATE pending_actions SET status = 'confirmed'
-     WHERE id = $1 AND user_id = $2 AND action_type = $3
-       AND status = 'pending' AND expires_at > now()
-     RETURNING payload`,
-    [pid, userId, actionType],
-  );
-  return rows[0]?.payload || null;
-}
-
-// Records the outcome. A problem here must never turn a finished action into an error.
-async function finishPending(id, status) {
+app.post("/api/chat/reset", authenticateToken, (req, res) => {
   try {
-    await pool.query(
-      "UPDATE pending_actions SET status = $2, resolved_at = now() WHERE id = $1",
-      [toId(id), status],
-    );
+    agent.forget(getUserId(req));
+    return res.json({ success: true });
   } catch (error) {
-    console.error("finishPending failed:", error.message);
+    return sendError(res, error, "chat reset failed");
   }
-}
+});
 
+// =========================================================================
+// AI AGENT: confirm (runs the approved action through the normal services)
+// =========================================================================
 app.post(
   "/api/chat/confirm",
   authenticateToken,
@@ -711,92 +588,93 @@ app.post(
         throw new AppError("Missing confirmation payload", 400);
       }
 
-      if (
-        ["create_client", "create_invoice", "settle_invoice"].includes(action)
-      ) {
-        const id = data.pendingActionId;
-        const p = await claimPending(userId, action, id);
-        if (!p) {
-          throw new AppError(
-            "This action expired or was already confirmed.",
-            409,
-          );
-        }
+      if (action === "create_client") {
+        const client = await clientService.registerClient(
+          userId,
+          data.name,
+          data.email,
+          data.phone_number,
+        );
+        return res.json({ message: `Client '${client.name}' created.` });
+      }
 
-        try {
-          let message;
-          if (action === "create_client") {
-            const client = await clientService.registerClient(
-              userId,
-              p.name,
-              p.email,
-              p.phone_number,
-            );
-            message = `Client '${client.name}' created.`;
-          } else if (action === "create_invoice") {
-            let clientId = p.client_id;
-            let createdClient = null;
+      if (action === "create_invoice") {
+        const invoice = await invoiceService.createFullInvoice(
+          userId,
+          data.client_id,
+          data.invoice_number,
+          data.due_date,
+          data.items,
+        );
+        return res.json({
+          message: `Invoice ${invoice.invoice_number} created with ${invoice.items.length} line item(s).`,
+        });
+      }
 
-            // The proposal may add a brand-new client together with the invoice
-            if (p.new_client) {
-              createdClient = await clientService.registerClient(
-                userId,
-                p.new_client.name,
-                p.new_client.email,
-                p.new_client.phone_number,
-              );
-              clientId = createdClient?.id;
-              if (!clientId) {
-                const found = await pool.query(
-                  "SELECT id FROM clients WHERE user_id = $1 AND email = $2",
-                  [userId, String(p.new_client.email).toLowerCase()],
-                );
-                clientId = found.rows[0]?.id;
-              }
-              if (!clientId) {
-                throw new AppError(
-                  "The client was added, but I couldn't find it to create the invoice. Please try the invoice again.",
-                  500,
-                );
-              }
-            }
+      if (action === "settle_invoice") {
+        const invoice = await invoiceService.settleInvoiceBalance(
+          data.invoiceId,
+          userId,
+        );
+        return res.json({
+          success: true,
+          message: `Invoice ${invoice.invoice_number} marked as PAID.`,
+        });
+      }
 
-            let invoice;
-            try {
-              invoice = await invoiceService.createFullInvoice(
-                userId,
-                clientId,
-                p.invoice_number,
-                p.due_date,
-                p.items,
-              );
-            } catch (invoiceError) {
-              if (createdClient) {
-                // Step 1 worked, step 2 did not: say so plainly
-                throw new AppError(
-                  `Client '${p.new_client.name}' was added, but the invoice could not be created (${invoiceError.message}). Ask me to create the invoice again.`,
-                  invoiceError.status || 400,
-                );
-              }
-              throw invoiceError;
-            }
+      if (action === "send_invoice") {
+        const result = await invoiceEmailService.sendInvoiceEmail(
+          userId,
+          data.invoiceId,
+        );
+        return res.json({
+          success: true,
+          message: `Invoice ${result.invoice_number} emailed to ${result.client_name}.`,
+        });
+      }
 
-            message = createdClient
-              ? `Client '${p.new_client.name}' added and invoice ${invoice.invoice_number} created with ${invoice.items.length} line item(s).`
-              : `Invoice ${invoice.invoice_number} created with ${invoice.items.length} line item(s).`;
-          } else {
-            const invoice = await invoiceService.settleInvoiceBalance(
-              p.invoiceId,
-              userId,
-            );
-            message = `Invoice ${invoice.invoice_number} marked as PAID.`;
-          }
-          await finishPending(id, "executed");
-          return res.json({ success: true, message });
-        } catch (error) {
-          await finishPending(id, "failed");
-          throw error;
-        }
+      if (action === "void_invoice") {
+        const invoice = await correctionService.voidInvoice(
+          userId,
+          data.invoiceId,
+        );
+        return res.json({
+          success: true,
+          message: `Invoice ${invoice.invoice_number} has been voided.`,
+        });
+      }
+
+      if (action === "change_due_date") {
+        const invoice = await correctionService.changeDueDate(
+          userId,
+          data.invoiceId,
+          data.dueDate,
+        );
+        return res.json({
+          success: true,
+          message: `Invoice ${invoice.invoice_number} is now due ${String(invoice.due_date).slice(0, 10)}.`,
+        });
+      }
+
+      if (action === "update_client") {
+        const client = await correctionService.updateClient(
+          userId,
+          data.clientId,
+          {
+            name: data.name,
+            email: data.email,
+            phone_number: data.phone_number,
+          },
+        );
+        return res.json({ success: true, message: `Updated ${client.name}.` });
+      }
+
+      if (action === "archive_client") {
+        const client = await correctionService.archiveClient(
+          userId,
+          data.clientId,
+        );
+        return res.json({ success: true, message: `Archived ${client.name}.` });
       }
 
       if (action === "send_reminders") {

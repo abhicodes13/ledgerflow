@@ -119,3 +119,10 @@ export function dateInDays(days = 0) {
   const p = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
+// Voided invoices stay on the server but must never show up as money owed
+export const isVoid = (inv) =>
+  /^(void|voided|cancelled|canceled)$/i.test(String(inv?.status ?? ""));
+
+// Archived clients are hidden from lists
+export const isArchived = (client) =>
+  Boolean(client?.archived_at || client?.archived || client?.is_archived);

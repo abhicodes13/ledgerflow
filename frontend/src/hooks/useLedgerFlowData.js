@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { API_BASE } from "../lib/config";
+import { isArchived, isVoid } from "../lib/format";
 export function useLedgerFlowData() {
   const [token, setToken] = useState(localStorage.getItem("lf_token") || "");
   const [currentUser, setCurrentUser] = useState(
@@ -63,7 +64,8 @@ export function useLedgerFlowData() {
     })
       .then((res) => res.json())
       .then((payload) => {
-        if (payload.clients) setClientsList(payload.clients);
+        if (payload.clients)
+          setClientsList(payload.clients.filter((c) => !isArchived(c)));
       })
       .catch((err) => console.error("❌ Dropdown lookup error:", err));
   };
@@ -75,7 +77,8 @@ export function useLedgerFlowData() {
     })
       .then((res) => res.json())
       .then((payload) => {
-        if (payload.invoices) setInvoicesList(payload.invoices);
+        if (payload.invoices)
+          setInvoicesList(payload.invoices.filter((i) => !isVoid(i)));
       })
       .catch((err) => console.error("❌ Ledger grid lookup error:", err));
   };

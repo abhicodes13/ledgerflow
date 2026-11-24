@@ -9,6 +9,8 @@ import {
   Sparkles,
   Timer,
   UserPlus,
+  Archive,
+  UserCog,
 } from "lucide-react";
 import { cn } from "../lib/cn";
 import { formatDate } from "../lib/format";
@@ -319,11 +321,99 @@ const ACTIONS = {
     }),
   },
 };
+// Added with email and corrections
+ACTIONS.change_due_date = {
+  ...ACTIONS.extend_due_date,
+  title: "Change due date",
+  confirmLabel: "Change due date",
+};
 
+ACTIONS.send_invoice = {
+  title: "Email invoice",
+  confirmLabel: "Send email",
+  icon: Mail,
+  tone: "serious", // a real email to a real client
+  build: (s) => ({
+    rows: [
+      { label: "Invoice", value: str(s.invoice_number), mono: true },
+      { label: "Client", value: str(s.client_name) },
+      { label: "Sending to", value: str(s.client_email ?? s.email ?? s.to) },
+      { label: "Amount", value: str(s.total), mono: true, strong: true },
+    ],
+    note: "Your client gets the invoice with the PDF attached. Replies come to you.",
+  }),
+};
+
+// Reads { changes: { email: "new" } }, { changes: { email: { from, to } } }, or old_/new_ pairs
+const CLIENT_FIELDS = [
+  ["name", "Name"],
+  ["email", "Email"],
+  ["phone_number", "Phone"],
+  ["phone", "Phone"],
+];
+
+function clientChangeRows(s) {
+  const rows = [];
+  const seen = new Set();
+  const add = (label, from, to) => {
+    if (seen.has(label) || to === "") return;
+    seen.add(label);
+    rows.push({ label, value: from ? `${from} → ${to}` : to });
+  };
+  const changes = s.changes && typeof s.changes === "object" ? s.changes : {};
+  for (const [key, label] of CLIENT_FIELDS) {
+    const v = changes[key];
+    if (v && typeof v === "object") {
+      add(
+        label,
+        str(v.from ?? v.old ?? v.before),
+        str(v.to ?? v.new ?? v.after),
+      );
+    } else if (v != null && v !== "") {
+      add(label, "", str(v));
+    } else if (s[`new_${key}`] != null) {
+      add(label, str(s[`old_${key}`]), str(s[`new_${key}`]));
+    }
+  }
+  return rows;
+}
+
+ACTIONS.update_client = {
+  title: "Update client",
+  confirmLabel: "Save changes",
+  icon: UserCog,
+  build: (s) => ({
+    rows: [
+      { label: "Client", value: str(s.client_name) },
+      ...clientChangeRows(s),
+    ],
+  }),
+};
+
+ACTIONS.archive_client = {
+  title: "Archive client",
+  confirmLabel: "Archive client",
+  icon: Archive,
+  tone: "danger",
+  build: (s) => ({
+    rows: [
+      { label: "Client", value: str(s.client_name ?? s.name) },
+      { label: "Email", value: str(s.client_email ?? s.email) },
+    ],
+    note: "There's no undo for archiving yet.",
+  }),
+};
 // Actions we don't know yet still get a readable card
 function genericBuild(s) {
   const rows = [];
   let items = [];
+  const push = (key, value, prefix = "") => {
+    const label = prefix ? `${prefix} · ${humanize(key)}` : humanize(key);
+    rows.push({
+      label,
+      value: /date/i.test(key) ? dateText(value) : str(value),
+    });
+  };
   for (const [key, value] of Object.entries(s)) {
     if (value == null || value === "") continue;
     if (Array.isArray(value)) {
@@ -332,11 +422,14 @@ function genericBuild(s) {
       }
       continue;
     }
-    if (typeof value === "object") continue;
-    rows.push({
-      label: humanize(key),
-      value: /date/i.test(key) ? dateText(value) : str(value),
-    });
+    if (typeof value === "object") {
+      for (const [k2, v2] of Object.entries(value)) {
+        if (v2 == null || v2 === "" || typeof v2 === "object") continue;
+        push(k2, v2, humanize(key));
+      }
+      continue;
+    }
+    push(key, value);
   }
   return { rows, items };
 }

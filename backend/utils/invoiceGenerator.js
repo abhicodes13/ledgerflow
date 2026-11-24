@@ -1,74 +1,25 @@
 const PDFDocument = require("pdfkit");
-
-// =========================================================================
-// INVOICE PDF
-//
-// US Letter, one accent colour, lots of white space. Layout, top to bottom:
-//   1. accent bar + header: sender on the left, INVOICE / number / status pill on the right
-//   2. info row: Billed to | Dates | Amount-due panel (with the Pay online button)
-//   3. line items table (header repeats on every page)
-//   4. totals on the right, payment / notes cards on the left
-//   5. footer on every page
-//
-// Same signature as before, so nothing else in the app changes:
-//   generateInvoicePdfStream(res, invoice, invoiceItems, business, options)
-// =========================================================================
+const { Writable } = require("stream");
 
 // ---------------------------------------------------------------------------
 // Design tokens
 // ---------------------------------------------------------------------------
-const PAGE = { size: "LETTER", width: 612, height: 792, margin: 48 };
-const LEFT = PAGE.margin;
-const RIGHT = PAGE.width - PAGE.margin;
-const FOOTER_RESERVE = 84; // space kept free at the bottom of each page
-
 const COLORS = {
-  ink: "#0f172a",
-  text: "#1f2937",
+  text: "#111827",
   muted: "#6b7280",
-  subtle: "#9ca3af",
   line: "#e5e7eb",
-  lineStrong: "#cbd5e1",
-  card: "#f8fafc",
+  band: "#f3f4f6",
   accent: "#1d4ed8",
-  white: "#ffffff",
+  paid: "#15803d",
+  due: "#b45309",
+  overdue: "#b91c1c",
+  void: "#6b7280",
 };
 
-// Status look: pill colours, and the colours of the amount panel
-const STATUS = {
-  paid: {
-    label: "PAID",
-    fg: "#15803d",
-    bg: "#dcfce7",
-    panelBg: "#f0fdf4",
-    panelEdge: "#bbf7d0",
-    panelFg: "#15803d",
-  },
-  void: {
-    label: "VOID",
-    fg: "#6b7280",
-    bg: "#f3f4f6",
-    panelBg: "#f8fafc",
-    panelEdge: "#e5e7eb",
-    panelFg: "#6b7280",
-  },
-  overdue: {
-    label: "OVERDUE",
-    fg: "#b91c1c",
-    bg: "#fee2e2",
-    panelBg: "#fef2f2",
-    panelEdge: "#fecaca",
-    panelFg: "#b91c1c",
-  },
-  due: {
-    label: "DUE",
-    fg: "#b45309",
-    bg: "#fef3c7",
-    panelBg: "#eff6ff",
-    panelEdge: "#bfdbfe",
-    panelFg: COLORS.accent,
-  },
-};
+const LEFT = 50; // left margin
+const RIGHT = 545; // right edge of content (A4 width 595 - 50)
+const CONTENT_W = RIGHT - LEFT;
+const FOOTER_RESERVE = 90; // space kept free at the bottom of each page
 
 // ---------------------------------------------------------------------------
 // Date helpers
@@ -99,64 +50,13 @@ function formatDate(value) {
 
 // "Overdue" is computed, never stored: unpaid and past the due date.
 function getStatus(invoice) {
-  if (invoice.status === "paid") return STATUS.paid;
-  if (invoice.status === "void") return STATUS.void;
+  if (invoice.status === "paid") return { label: "PAID", color: COLORS.paid };
+  if (invoice.status === "void") return { label: "VOID", color: COLORS.void };
   const due = toYmd(invoice.due_date);
-  if (due && due < toYmd(new Date())) return STATUS.overdue;
-  return STATUS.due;
-}
-
-// Only https links go into a PDF. (Plain http is allowed for localhost while
-// developing, so the button can be tested on your own machine.)
-function safePayUrl(value) {
-  if (!value) return null;
-  try {
-    const url = new URL(String(value));
-    if (url.protocol === "https:") return url.toString();
-    const local = ["localhost", "127.0.0.1"].includes(url.hostname);
-    if (
-      url.protocol === "http:" &&
-      local &&
-      process.env.NODE_ENV !== "production"
-    ) {
-      return url.toString();
-    }
-    return null;
-  } catch {
-    return null;
+  if (due && due < toYmd(new Date())) {
+    return { label: "OVERDUE", color: COLORS.overdue };
   }
-}
-
-// Largest font size (down to minSize) at which the text still fits the width
-function fitFontSize(doc, text, font, maxSize, minSize, maxWidth) {
-  let size = maxSize;
-  doc.font(font);
-  while (size > minSize) {
-    doc.fontSize(size);
-    if (doc.widthOfString(text) <= maxWidth) break;
-    size -= 1;
-  }
-  return size;
-}
-
-// One line of text that must fit a width: shrinks the font a little (down to
-// minSize), and only if it still does not fit, cuts it and adds an ellipsis.
-// Used for emails, phone numbers and addresses, which cannot wrap nicely.
-function fitText(doc, text, font, size, minSize, maxWidth) {
-  const full = String(text);
-  doc.font(font);
-  let fontSize = size;
-  while (fontSize >= minSize) {
-    doc.fontSize(fontSize);
-    if (doc.widthOfString(full) <= maxWidth)
-      return { text: full, size: fontSize };
-    fontSize -= 0.5;
-  }
-  doc.fontSize(minSize);
-  let cut = full;
-  while (cut.length > 1 && doc.widthOfString(cut + "\u2026") > maxWidth)
-    cut = cut.slice(0, -1);
-  return { text: cut + "\u2026", size: minSize };
+  return { label: "DUE", color: COLORS.due };
 }
 
 /**
@@ -166,9 +66,7 @@ function fitText(doc, text, font, size, minSize, maxWidth) {
  * @param {Object} invoice       invoices row + client_name, client_email, (optional) client_phone, notes
  * @param {Array}  invoiceItems  rows with description, quantity, unit_amount_cents
  * @param {Object} business      optional sender info: { name, email, phone, address, paymentInstructions }
- * @param {Object} options       optional: { currency: "USD", showBranding: true, paymentUrl }
- *                               paymentUrl adds a clickable "Pay online" button. It only
- *                               appears on unpaid, non-void invoices.
+ * @param {Object} options       optional: { currency: "USD", showBranding: true }
  */
 function generateInvoicePdfStream(
   res,
@@ -186,18 +84,10 @@ function generateInvoicePdfStream(
   const safeNumber = String(invoice.invoice_number).replace(/[^\w.-]/g, "_");
   const status = getStatus(invoice);
   const isPaid = invoice.status === "paid";
-  const isVoid = invoice.status === "void";
-  const payUrl = !isPaid && !isVoid ? safePayUrl(options.paymentUrl) : null;
-
-  const subtotal = invoiceItems.reduce(
-    (sum, item) => sum + item.quantity * item.unit_amount_cents,
-    0,
-  );
-  const amountDue = isPaid || isVoid ? 0 : subtotal;
 
   const doc = new PDFDocument({
-    size: PAGE.size,
-    margin: PAGE.margin,
+    size: "A4",
+    margin: 50,
     bufferPages: true, // lets us stamp "Page X of Y" at the end
     info: {
       Title: `Invoice ${invoice.invoice_number}`,
@@ -213,295 +103,166 @@ function generateInvoicePdfStream(
   doc.pipe(res);
 
   const pageBottom = () => doc.page.height - FOOTER_RESERVE;
-  const smallLabel = (text, x, y) =>
-    doc
-      .font("Helvetica-Bold")
-      .fontSize(7.5)
-      .fillColor(COLORS.muted)
-      .text(String(text).toUpperCase(), x, y, { characterSpacing: 0.8 });
 
   // -------------------------------------------------------------------------
-  // 1. Accent bar and header
+  // 1. Header: sender on the left, INVOICE title + status badge on the right
   // -------------------------------------------------------------------------
-  doc.rect(0, 0, PAGE.width, 6).fill(COLORS.accent);
+  let y = 50;
 
-  // Faint watermark for paid and void invoices, drawn first so text sits on top
-  if (isPaid || isVoid) {
-    doc.save();
-    doc.rotate(-22, { origin: [PAGE.width / 2, 430] });
-    doc
-      .fillOpacity(0.07)
-      .font("Helvetica-Bold")
-      .fontSize(130)
-      .fillColor(status.fg)
-      .text(status.label, 0, 370, {
-        width: PAGE.width,
-        align: "center",
-        lineBreak: false,
-      });
-    doc.restore();
-  }
-
-  let y = 40;
-
-  // Left: who is sending the invoice
   const senderName = business.name || business.email || "Your Business";
   doc
     .font("Helvetica-Bold")
-    .fontSize(20)
-    .fillColor(COLORS.ink)
-    .text(senderName, LEFT, y, { width: 300 });
+    .fontSize(16)
+    .fillColor(COLORS.text)
+    .text(senderName, LEFT, y, { width: 280 });
 
-  let senderY = doc.y + 3;
+  let senderY = doc.y + 2;
   const senderLines = [
     business.name ? business.email : null,
     business.phone,
     ...(business.address ? String(business.address).split("\n") : []),
   ].filter(Boolean);
 
+  doc.font("Helvetica").fontSize(9).fillColor(COLORS.muted);
   for (const line of senderLines) {
-    const fit = fitText(doc, line, "Helvetica", 9, 7, 300);
-    doc
-      .font("Helvetica")
-      .fontSize(fit.size)
-      .fillColor(COLORS.muted)
-      .text(fit.text, LEFT, senderY + 1, { width: 300, lineBreak: false });
+    doc.text(line, LEFT, senderY, { width: 280 });
     senderY = doc.y;
   }
 
-  // Right: INVOICE label, number, status pill
-  const rightW = 230;
-  const rightX = RIGHT - rightW;
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(26)
+    .fillColor(COLORS.accent)
+    .text("INVOICE", 345, y, { width: 200, align: "right" });
+  doc
+    .font("Helvetica")
+    .fontSize(10)
+    .fillColor(COLORS.muted)
+    .text(`# ${invoice.invoice_number}`, 345, y + 32, {
+      width: 200,
+      align: "right",
+    });
+
+  const badgeW = 74;
+  const badgeX = RIGHT - badgeW;
+  const badgeY = y + 52;
+  doc.roundedRect(badgeX, badgeY, badgeW, 18, 4).fill(status.color);
   doc
     .font("Helvetica-Bold")
     .fontSize(9)
-    .fillColor(COLORS.accent)
-    .text("INVOICE", rightX, y + 2, {
-      width: rightW,
-      align: "right",
-      characterSpacing: 2,
-    });
+    .fillColor("#ffffff")
+    .text(status.label, badgeX, badgeY + 5, { width: badgeW, align: "center" });
 
-  const numText = String(invoice.invoice_number);
-  const numSize = fitFontSize(doc, numText, "Helvetica-Bold", 24, 14, rightW);
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(numSize)
-    .fillColor(COLORS.ink)
-    .text(numText, rightX, y + 16, { width: rightW, align: "right" });
-
-  doc.font("Helvetica-Bold").fontSize(8);
-  const pillW =
-    doc.widthOfString(status.label) + status.label.length * 0.6 + 22;
-  const pillH = 17;
-  const pillX = RIGHT - pillW;
-  const pillY = y + 16 + numSize * 1.16 + 8;
-  doc.roundedRect(pillX, pillY, pillW, pillH, pillH / 2).fill(status.bg);
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(8)
-    .fillColor(status.fg)
-    .text(status.label, pillX, pillY + 5, {
-      width: pillW,
-      align: "center",
-      characterSpacing: 0.6,
-    });
-
-  y = Math.max(senderY, pillY + pillH) + 22;
+  y = Math.max(senderY, badgeY + 18) + 24;
   doc
     .moveTo(LEFT, y)
     .lineTo(RIGHT, y)
-    .lineWidth(0.75)
+    .lineWidth(1)
     .strokeColor(COLORS.line)
     .stroke();
 
   // -------------------------------------------------------------------------
-  // 2. Info row: Billed to | Dates | Amount-due panel
+  // 2. Bill-to (left) and dates (right)
   // -------------------------------------------------------------------------
-  const infoY = y + 24;
+  const infoY = y + 16;
 
-  // Column 1: billed to
-  smallLabel("Billed to", LEFT, infoY);
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(8)
+    .fillColor(COLORS.muted)
+    .text("BILL TO", LEFT, infoY);
   doc
     .font("Helvetica-Bold")
     .fontSize(12)
-    .fillColor(COLORS.ink)
-    .text(invoice.client_name || "-", LEFT, infoY + 14, { width: 185 });
-  let billY = doc.y + 3;
+    .fillColor(COLORS.text)
+    .text(invoice.client_name || "-", LEFT, infoY + 14, { width: 260 });
+
+  let billY = doc.y + 2;
+  doc.font("Helvetica").fontSize(9).fillColor(COLORS.muted);
   for (const line of [invoice.client_email, invoice.client_phone].filter(
     Boolean,
   )) {
-    const fit = fitText(doc, line, "Helvetica", 9, 7, 185);
-    doc
-      .font("Helvetica")
-      .fontSize(fit.size)
-      .fillColor(COLORS.muted)
-      .text(fit.text, LEFT, billY + 1, { width: 185, lineBreak: false });
+    doc.text(line, LEFT, billY, { width: 260 });
     billY = doc.y;
   }
 
-  // Column 2: dates
-  const datesX = 248;
-  const dates = [
+  const meta = [
     ["Issue date", formatDate(invoice.created_at)],
     ["Due date", formatDate(invoice.due_date)],
   ];
   if (isPaid && invoice.paid_at)
-    dates.push(["Paid on", formatDate(invoice.paid_at)]);
-  let dateY = infoY;
-  for (const [label, value] of dates) {
-    smallLabel(label, datesX, dateY);
+    meta.push(["Paid on", formatDate(invoice.paid_at)]);
+
+  let metaY = infoY;
+  for (const [label, value] of meta) {
+    doc
+      .font("Helvetica")
+      .fontSize(9)
+      .fillColor(COLORS.muted)
+      .text(label, 345, metaY, { width: 90 });
     doc
       .font("Helvetica-Bold")
-      .fontSize(10)
-      .fillColor(COLORS.ink)
-      .text(value, datesX, dateY + 12, { width: 130 });
-    dateY += 34;
+      .fillColor(COLORS.text)
+      .text(value, 435, metaY, { width: 110, align: "right" });
+    metaY += 16;
   }
 
-  // Column 3: amount panel (with the Pay online button when there is a link)
-  const panelX = 392;
-  const panelW = RIGHT - panelX;
-  const innerW = panelW - 32;
-  const panelAmount = money(amountDue);
-  const amountSize = fitFontSize(
-    doc,
-    panelAmount,
-    "Helvetica-Bold",
-    26,
-    15,
-    innerW,
-  );
-  const amountH = amountSize * 1.16;
-  const subText = isPaid
-    ? "Paid in full"
-    : isVoid
-      ? "This invoice is void"
-      : `Due ${formatDate(invoice.due_date)}`;
-  const btnH = 30;
-  const panelH = 16 + 10 + 6 + amountH + 6 + 12 + (payUrl ? 14 + btnH : 0) + 16;
-
-  doc
-    .roundedRect(panelX, infoY - 6, panelW, panelH, 10)
-    .lineWidth(0.75)
-    .fillAndStroke(status.panelBg, status.panelEdge);
-  let py = infoY - 6 + 16;
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(7.5)
-    .fillColor(status.panelFg)
-    .text("AMOUNT DUE", panelX + 16, py, {
-      width: innerW,
-      characterSpacing: 0.8,
-    });
-  py += 10 + 6;
-  doc
-    .font("Helvetica-Bold")
-    .fontSize(amountSize)
-    .fillColor(status.panelFg)
-    .text(panelAmount, panelX + 16, py, { width: innerW });
-  py += amountH + 6;
-  doc
-    .font("Helvetica")
-    .fontSize(9)
-    .fillColor(COLORS.muted)
-    .text(subText, panelX + 16, py, { width: innerW });
-  py += 12;
-
-  if (payUrl) {
-    // A real link annotation: clicking the button opens the payment page.
-    py += 14;
-    doc.roundedRect(panelX + 16, py, innerW, btnH, 7).fill(COLORS.accent);
-    doc
-      .font("Helvetica-Bold")
-      .fontSize(10.5)
-      .fillColor(COLORS.white)
-      .text("Pay online", panelX + 16, py + 9.5, {
-        width: innerW,
-        align: "center",
-      });
-    doc.link(panelX + 16, py, innerW, btnH, payUrl);
-  }
-
-  y = Math.max(billY, dateY, infoY - 6 + panelH) + 34;
+  y = Math.max(billY, metaY) + 28;
 
   // -------------------------------------------------------------------------
-  // 3. Line items table (the header repeats on new pages)
+  // 3. Line items table (repeats its header on new pages)
   // -------------------------------------------------------------------------
   const col = {
-    desc: { x: LEFT, w: 270 },
-    qty: { x: 330, w: 40 },
-    unit: { x: 380, w: 80 },
-    amt: { x: 470, w: RIGHT - 470 },
+    desc: { x: 56, w: 250 },
+    qty: { x: 310, w: 40 },
+    unit: { x: 355, w: 85 },
+    amt: { x: 445, w: 94 },
   };
 
   const drawTableHeader = (top) => {
-    doc.font("Helvetica-Bold").fontSize(7.5).fillColor(COLORS.muted);
-    const opts = { characterSpacing: 0.8 };
-    doc.text("DESCRIPTION", col.desc.x, top, { width: col.desc.w, ...opts });
-    // 0.8 less width: letter spacing adds a trailing gap that would push the heading off the column edge
-    doc.text("QTY", col.qty.x, top, {
-      width: col.qty.w - 0.8,
+    doc.rect(LEFT, top, CONTENT_W, 22).fill(COLORS.band);
+    doc.font("Helvetica-Bold").fontSize(8).fillColor(COLORS.muted);
+    doc.text("DESCRIPTION", col.desc.x, top + 7, { width: col.desc.w });
+    doc.text("QTY", col.qty.x, top + 7, { width: col.qty.w, align: "right" });
+    doc.text("UNIT PRICE", col.unit.x, top + 7, {
+      width: col.unit.w,
       align: "right",
-      ...opts,
     });
-    doc.text("UNIT PRICE", col.unit.x, top, {
-      width: col.unit.w - 0.8,
+    doc.text("AMOUNT", col.amt.x, top + 7, {
+      width: col.amt.w,
       align: "right",
-      ...opts,
     });
-    doc.text("AMOUNT", col.amt.x, top, {
-      width: col.amt.w - 0.8,
-      align: "right",
-      ...opts,
-    });
-    const lineY = top + 17;
-    doc
-      .moveTo(LEFT, lineY)
-      .lineTo(RIGHT, lineY)
-      .lineWidth(1)
-      .strokeColor(COLORS.lineStrong)
-      .stroke();
-    return lineY;
+    return top + 22;
   };
 
   y = drawTableHeader(y);
 
-  if (invoiceItems.length === 0) {
-    doc
-      .font("Helvetica")
-      .fontSize(10)
-      .fillColor(COLORS.muted)
-      .text("No line items", col.desc.x, y + 14, { width: col.desc.w });
-    y += 14 + 12 + 14;
-  }
-
+  let subtotal = 0;
   for (const item of invoiceItems) {
     const description = String(item.description || "");
     const lineTotal = item.quantity * item.unit_amount_cents;
+    subtotal += lineTotal;
 
     doc.font("Helvetica").fontSize(10);
     const textHeight = doc.heightOfString(description, { width: col.desc.w });
-    const rowHeight = Math.max(textHeight, 12) + 26; // 13pt of air above and below
+    const rowHeight = Math.max(textHeight, 12) + 16;
 
     if (y + rowHeight > pageBottom()) {
       doc.addPage();
-      y = drawTableHeader(PAGE.margin);
+      y = drawTableHeader(50);
     }
 
-    doc.font("Helvetica").fontSize(10).fillColor(COLORS.ink);
-    doc.text(description, col.desc.x, y + 13, { width: col.desc.w });
-    doc.fillColor(COLORS.muted);
-    doc.text(String(item.quantity), col.qty.x, y + 13, {
+    doc.font("Helvetica").fontSize(10).fillColor(COLORS.text);
+    doc.text(description, col.desc.x, y + 8, { width: col.desc.w });
+    doc.text(String(item.quantity), col.qty.x, y + 8, {
       width: col.qty.w,
       align: "right",
     });
-    doc.text(money(item.unit_amount_cents), col.unit.x, y + 13, {
+    doc.text(money(item.unit_amount_cents), col.unit.x, y + 8, {
       width: col.unit.w,
       align: "right",
     });
-    doc.font("Helvetica-Bold").fillColor(COLORS.ink);
-    doc.text(money(lineTotal), col.amt.x, y + 13, {
+    doc.text(money(lineTotal), col.amt.x, y + 8, {
       width: col.amt.w,
       align: "right",
     });
@@ -516,18 +277,13 @@ function generateInvoicePdfStream(
   }
 
   // -------------------------------------------------------------------------
-  // 4. Totals (right) and payment / notes cards (left), side by side
+  // 4. Totals
   // -------------------------------------------------------------------------
-  y += 26;
-  const totalsX = 352;
-  const totalsW = RIGHT - totalsX;
-  const totalsHeight = (isPaid ? 24 : 0) + 24 + 2 + 44;
-
-  if (y + totalsHeight > pageBottom()) {
+  y += 18;
+  if (y + 90 > pageBottom()) {
     doc.addPage();
-    y = PAGE.margin;
+    y = 50;
   }
-  const blockTop = y;
 
   const totalsRow = (
     label,
@@ -538,114 +294,72 @@ function generateInvoicePdfStream(
       .font(bold ? "Helvetica-Bold" : "Helvetica")
       .fontSize(10)
       .fillColor(color);
-    doc.text(label, totalsX, y, { width: 110 });
-    doc.text(value, totalsX + 110, y, { width: totalsW - 110, align: "right" });
-    y += 24;
+    doc.text(label, 345, y, { width: 100 });
+    doc.text(value, 445, y, { width: 94, align: "right" });
+    y += 18;
   };
 
-  totalsRow("Total", money(subtotal), { bold: true, color: COLORS.ink });
-  if (isPaid)
-    totalsRow("Paid", `- ${money(subtotal)}`, { color: STATUS.paid.fg });
-  y += 2;
-  doc
-    .roundedRect(totalsX, y, totalsW, 44, 8)
-    .lineWidth(0.75)
-    .fillAndStroke(status.panelBg, status.panelEdge);
+  totalsRow("Subtotal", money(subtotal), { color: COLORS.muted });
+  totalsRow("Total", money(subtotal), { bold: true });
+
+  const amountDue = isPaid || invoice.status === "void" ? 0 : subtotal;
+  y += 4;
+  doc.rect(345, y, 200, 32).fill(COLORS.band);
   doc
     .font("Helvetica-Bold")
     .fontSize(10)
-    .fillColor(COLORS.ink)
-    .text("Amount due", totalsX + 14, y + 17, { width: 90 });
-  const dueSize = fitFontSize(
-    doc,
-    money(amountDue),
-    "Helvetica-Bold",
-    16,
-    11,
-    totalsW - 28 - 90,
-  );
+    .fillColor(COLORS.text)
+    .text("Amount due", 355, y + 11, { width: 90 });
   doc
-    .font("Helvetica-Bold")
-    .fontSize(dueSize)
-    .fillColor(status.panelFg)
-    .text(money(amountDue), totalsX + 104, y + 14 + (16 - dueSize) / 2, {
-      width: totalsW - 104 - 14,
-      align: "right",
-    });
-  const totalsBottom = y + 44;
+    .fontSize(14)
+    .fillColor(COLORS.accent)
+    .text(money(amountDue), 445, y + 9, { width: 94, align: "right" });
+  y += 32 + 28;
 
-  // Cards on the left, starting at the same height as the totals
-  const cards = [];
+  // -------------------------------------------------------------------------
+  // 5. Payment instructions / notes
+  // -------------------------------------------------------------------------
+  const sections = [];
   if (business.paymentInstructions) {
-    cards.push({
-      label: "Payment instructions",
-      body: String(business.paymentInstructions),
-    });
+    sections.push([
+      "PAYMENT INSTRUCTIONS",
+      String(business.paymentInstructions),
+    ]);
   }
-  if (payUrl) {
-    cards.push({
-      label: "Pay online",
-      body: "Use the Pay online button on this invoice, or open this link:",
-      link: payUrl,
-    });
-  }
-  if (invoice.notes)
-    cards.push({ label: "Notes", body: String(invoice.notes) });
-  if (!cards.length) {
-    cards.push(
+  if (invoice.notes) sections.push(["NOTES", String(invoice.notes)]);
+  if (!sections.length) {
+    sections.push(
       isPaid
-        ? {
-            label: "Thank you",
-            body: "Payment received. Thank you for your business.",
-          }
-        : {
-            label: "Payment",
-            body: `Please include invoice number ${invoice.invoice_number} with your payment.`,
-          },
+        ? ["THANK YOU", "Payment received. Thank you for your business."]
+        : [
+            "PAYMENT",
+            `Please include invoice number ${invoice.invoice_number} with your payment.`,
+          ],
     );
   }
 
-  const cardW = totalsX - LEFT - 28;
-  let cy = blockTop;
-  for (const card of cards) {
+  for (const [label, body] of sections) {
     doc.font("Helvetica").fontSize(9);
-    const bodyH = doc.heightOfString(card.body, { width: cardW - 28 });
-    doc.fontSize(8);
-    const linkH = card.link
-      ? doc.heightOfString(card.link, { width: cardW - 28 }) + 4
-      : 0;
-    const cardH = 14 + 10 + 6 + bodyH + linkH + 14;
-
-    if (cy + cardH > pageBottom()) {
+    const needed = doc.heightOfString(body, { width: CONTENT_W }) + 24;
+    if (y + needed > pageBottom()) {
       doc.addPage();
-      cy = PAGE.margin;
+      y = 50;
     }
     doc
-      .roundedRect(LEFT, cy, cardW, cardH, 8)
-      .lineWidth(0.75)
-      .fillAndStroke(COLORS.card, COLORS.line);
-    smallLabel(card.label, LEFT + 14, cy + 14);
+      .font("Helvetica-Bold")
+      .fontSize(8)
+      .fillColor(COLORS.muted)
+      .text(label, LEFT, y);
     doc
       .font("Helvetica")
       .fontSize(9)
       .fillColor(COLORS.text)
-      .text(card.body, LEFT + 14, cy + 14 + 10 + 6, { width: cardW - 28 });
-    if (card.link) {
-      doc
-        .font("Helvetica")
-        .fontSize(8)
-        .fillColor(COLORS.accent)
-        .text(card.link, LEFT + 14, doc.y + 4, {
-          width: cardW - 28,
-          link: card.link,
-        });
-    }
-    cy += cardH + 12;
+      .text(body, LEFT, y + 13, { width: CONTENT_W });
+    y = doc.y + 18;
   }
-  y = Math.max(totalsBottom, cy);
 
   // -------------------------------------------------------------------------
-  // 5. Footer on every page: reference, branding, "Page X of Y"
+  // 6. Footer on every page: reference + "Page X of Y"
   // -------------------------------------------------------------------------
   const range = doc.bufferedPageRange();
   for (let i = 0; i < range.count; i++) {
@@ -656,7 +370,7 @@ function generateInvoicePdfStream(
     const savedBottom = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
 
-    const footerY = doc.page.height - 50;
+    const footerY = doc.page.height - 55;
     doc
       .moveTo(LEFT, footerY)
       .lineTo(RIGHT, footerY)
@@ -664,19 +378,19 @@ function generateInvoicePdfStream(
       .strokeColor(COLORS.line)
       .stroke();
 
-    doc.font("Helvetica").fontSize(8).fillColor(COLORS.subtle);
+    doc.font("Helvetica").fontSize(8).fillColor(COLORS.muted);
     doc.text(
-      `Invoice ${invoice.invoice_number}${business.name ? "  \u00b7  " + business.name : ""}`,
+      `Invoice ${invoice.invoice_number}${business.name ? "  |  " + business.name : ""}`,
       LEFT,
-      footerY + 11,
+      footerY + 10,
       { width: 330 },
     );
-    doc.text(`Page ${i + 1} of ${range.count}`, RIGHT - 100, footerY + 11, {
+    doc.text(`Page ${i + 1} of ${range.count}`, 445, footerY + 10, {
       width: 100,
       align: "right",
     });
     if (options.showBranding !== false) {
-      doc.text("Created with LedgerFlow", LEFT, footerY + 23, { width: 330 });
+      doc.text("Created with LedgerFlow", LEFT, footerY + 22, { width: 330 });
     }
 
     doc.page.margins.bottom = savedBottom;
@@ -685,4 +399,31 @@ function generateInvoicePdfStream(
   doc.end();
 }
 
-module.exports = { generateInvoicePdfStream };
+// Same PDF, returned as a Buffer (used to attach it to an email).
+// It reuses the streaming version by pointing it at an in-memory writable.
+function generateInvoicePdfBuffer(
+  invoice,
+  invoiceItems,
+  business = {},
+  options = {},
+) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const sink = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(chunk);
+        callback();
+      },
+    });
+    sink.setHeader = () => {}; // the streaming version sets HTTP headers; ignore them here
+    sink.on("finish", () => resolve(Buffer.concat(chunks)));
+    sink.on("error", reject);
+    try {
+      generateInvoicePdfStream(sink, invoice, invoiceItems, business, options);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+module.exports = { generateInvoicePdfStream, generateInvoicePdfBuffer };

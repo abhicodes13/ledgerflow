@@ -69,7 +69,7 @@ const FEATURES = [
   {
     icon: FileText,
     title: "Invoices in under a minute",
-    text: "Line items, live totals, automatic numbering, and due dates like Net 30. Download any invoice as a PDF.",
+    text: "Line items, live totals, automatic numbering, and due dates like Net 30. Email it to your client with the PDF attached, or download it.",
     status: "live",
   },
   {
@@ -134,7 +134,7 @@ const FAQ = [
   },
   {
     q: "What can the AI assistant do?",
-    a: "It can add clients, create invoices (including a repeat of a client's last one), mark invoices as paid, send overdue reminders, and summarize your numbers. Each time, it shows you a summary first.",
+    a: "It can add clients, create invoices (including a repeat of a client's last one), email invoices, mark them as paid, send overdue reminders, void invoices, fix due dates and client details, and summarize your numbers. Each time, it shows you a summary first.",
   },
   {
     q: "Will the AI change my data without asking?",
@@ -153,8 +153,8 @@ const FAQ = [
     a: "Connect a Stripe account in Settings (it takes about 5 minutes), then copy a payment link from any unpaid invoice. Your client pays by card on a Stripe page, and the invoice marks itself paid. Online payments are rolling out now, and Stripe's processing fees apply.",
   },
   {
-    q: "Can I email the invoice itself?",
-    a: "Not yet. Today you can download a PDF or copy a payment link to send yourself, and send reminders from LedgerFlow. Emailing invoices directly is coming.",
+    q: "Can I email an invoice to my client?",
+    a: "Yes. Send any unpaid invoice from LedgerFlow and your client gets it by email with the PDF attached. Replies come straight to you. You can also ask the assistant to do it, and you confirm first.",
   },
   {
     q: "Is my data private and secure?",

@@ -6,7 +6,7 @@ export const PLAN = {
   yearly: 200,
   features: [
     "Unlimited clients and invoices",
-    "Itemized invoices, emailed to clients with a PDF attached",
+    "Itemized invoices with PDF download",
     "Paid, pending, and overdue tracking",
     "Payment reminders you review before they send",
     "AI assistant that asks before it acts (monthly usage included)",

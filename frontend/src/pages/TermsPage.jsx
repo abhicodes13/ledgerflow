@@ -112,7 +112,7 @@ const SECTIONS = [
         items={[
           "You own the information you put into the Service, such as your clients and invoices.",
           "You give us permission to store and process it only to run the Service for you.",
-          "You're responsible for having the right to add your clients' information and to contact them, including by emailing invoices and reminders.",
+          "You're responsible for having the right to add your clients' information and to contact them, including by email reminders.",
           "You're responsible for the invoices you create and for following the laws that apply to your business, including tax and consumer laws.",
         ]}
       />

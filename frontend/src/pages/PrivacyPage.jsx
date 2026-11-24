@@ -26,9 +26,8 @@ const SECTIONS = [
           "Your business data: the clients, invoices, line items, due dates, and payment status you enter or create, including your clients' names, email addresses, and phone numbers.",
           "Billing: your plan, subscription status, and renewal date. Card details are collected and stored by Stripe, and we never see or store full card numbers.",
           "Payments setup: if you connect Stripe to accept payments, we keep your Stripe account reference and its setup status.",
-          "AI assistant: the messages you send it, and the account details needed to answer, are processed to produce a response. The server keeps your most recent assistant messages in temporary memory for about 30 minutes of inactivity so follow-up requests make sense, then discards them. We also keep usage counts so we can apply limits.",
+          "AI assistant: the messages you send it, and the account details needed to answer, are processed to produce a response. We don't keep your conversation history on our servers, but we do keep usage counts so we can apply limits.",
           "Technical information: your IP address, browser type, and logs of errors and requests, used for security, rate limiting, and fixing problems.",
-          "Email records: a log of the invoices and reminders we send on your behalf, including who they went to and when, so we can prevent duplicates and apply sending limits.",
         ]}
       />
     ),
@@ -80,7 +79,7 @@ const SECTIONS = [
         <UL
           items={[
             "Stripe: subscriptions, billing, and payments from your clients.",
-            "Resend: delivering the emails we send, such as password resets, reminders, and invoices.",
+            "Resend: delivering the emails we send, such as password resets and reminders.",
             `${LEGAL.aiProvider}: processing the messages you send to the assistant.`,
             `Hosting: ${LEGAL.hosting}.`,
           ]}

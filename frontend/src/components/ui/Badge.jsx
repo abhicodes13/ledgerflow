@@ -29,10 +29,6 @@ const statusMap = {
 };
 
 export function StatusBadge({ invoice }) {
-  const state = invoiceState(invoice);
-  const { tone, label } = statusMap[state] ?? {
-    tone: "neutral",
-    label: String(state),
-  };
+  const { tone, label } = statusMap[invoiceState(invoice)];
   return <Badge tone={tone}>{label}</Badge>;
 }
